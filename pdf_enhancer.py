@@ -105,7 +105,7 @@ def process_image_cv(image, area_threshold_ratio=0.4, upscale_factor=2):
     # Upscale and apply adaptive threshold for a clean, scanned look
     upscaled = cv2.resize(warped, (0, 0), fx=upscale_factor, fy=upscale_factor, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
-    
+
     binary = cv2.adaptiveThreshold(
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -120,7 +120,7 @@ def images_to_pdf_from_arrays(images, output_pdf_path):
     """Saves a list of image arrays to a single PDF file."""
     if not images:
         raise gr.Error("No images were processed to save.")
-    
+
     pil_images = [Image.fromarray(img).convert('RGB') for img in images]
     pil_images[0].save(output_pdf_path, save_all=True, append_images=pil_images[1:])
 
@@ -143,7 +143,7 @@ def enhance_pdf(pdf_file, dpi):
     # 3. Save processed images to a new PDF
     output_pdf_path = "output_enhanced.pdf"
     images_to_pdf_from_arrays(processed_images, output_pdf_path)
-    
+
     return output_pdf_path
 
 # --- Gradio Interface Definition ---
@@ -161,4 +161,4 @@ if __name__ == "__main__":
     )
 
     # Launch the web server
-    iface.launch()
+    iface.launch(server_name="0.0.0.0",server_port=7860)
