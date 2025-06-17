@@ -18,7 +18,7 @@ This script exports data from one database to be compared with data from another
 
 OPTIONS:
     -h      Show this message
-    -v      Version to build, defaults to 'latest'
+    -v      Version to build, defaults to 'testing'
     -f      Custom Containerfile with absolute or relative directory
     -F      Format of containerfile
 EOF
@@ -56,7 +56,7 @@ get_parameters() {
     done
 
     if [[ -z $OPT_CONTAINERFILE ]]; then
-        OPT_CONTAINERFILE="docker/Containerfile"
+        OPT_CONTAINERFILE="Containerfile"
     fi
 
     if [[ -z $OPT_FORMAT_TYPE ]]; then
@@ -68,7 +68,7 @@ get_parameters() {
     fi
 
     if [[ -z $OPT_VERSION ]]; then
-        OPT_VERSION="latest"
+        OPT_VERSION="testing"
     fi
 }
 
@@ -76,8 +76,8 @@ get_parameters() {
 container_build() {
     if [[ -z $TAG ]]; then
         podman login ${REGISTRY}
-        podman build -f ${OPT_CONTAINERFILE} -t ${REGISTRY}/${REGISTRY_NAMESPACE}:latest
-        podman push ${REGISTRY}/${REGISTRY_NAMESPACE}:latest
+        podman build -f ${OPT_CONTAINERFILE} -t ${REGISTRY}/${REGISTRY_NAMESPACE}:testing
+        podman push ${REGISTRY}/${REGISTRY_NAMESPACE}:testing
     else
         podman build -f ${OPT_CONTAINERFILE} -t ${REGISTRY}/${REGISTRY_NAMESPACE}:${TAG} -t ${REGISTRY}/${REGISTRY_NAMESPACE}:latest
         podman push ${REGISTRY}/${REGISTRY_NAMESPACE}:${TAG}

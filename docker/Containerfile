@@ -11,8 +11,6 @@ RUN microdnf --assumeyes update \
         python3.12 python3.12-pip\
     && rm -rf /var/cache/yum
 
-RUN
-
 USER pdf
 
 WORKDIR /pdf_enhancer
