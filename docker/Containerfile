@@ -8,7 +8,8 @@ RUN microdnf --assumeyes update \
     && microdnf --assumeyes install \
         git \
         pip \
-        python3.12 python3.12-pip\
+        python3.12 python3.12-pip \
+        vim \
     && rm -rf /var/cache/yum
 
 USER pdf
