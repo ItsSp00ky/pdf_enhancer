@@ -1,95 +1,102 @@
 <div id="top" align="center">
 
-# PDF_ENHANCER
+# 📄 PDF Enhancer
+### *Transform Scanned PDFs into Professional-Quality Documents*
 
-*Transform PDFs into Stunning, Professional-Quality Documents*
+[![Last Commit](https://img.shields.io/github/last-commit/ItsSp00ky/pdf_enhancer?style=flat&logo=git&logoColor=white&color=0080ff)](https://github.com/ItsSp00ky/pdf_enhancer/commits/main)
+[![Top Language](https://img.shields.io/github/languages/top/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)](https://github.com/ItsSp00ky/pdf_enhancer)
+[![License](https://img.shields.io/github/license/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)](LICENSE)
 
-![last-commit](https://img.shields.io/github/last-commit/ItsSp00ky/pdf_enhancer?style=flat&logo=git&logoColor=white&color=0080ff)
-![repo-top-language](https://img.shields.io/github/languages/top/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)
-![repo-language-count](https://img.shields.io/github/languages/count/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)
+*Built with:*
 
-*Built with the tools and technologies:*
-
-![Markdown](https://img.shields.io/badge/Markdown-000000.svg?style=flat&logo=Markdown&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy-013243.svg?style=flat&logo=NumPy&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB.svg?style=flat&logo=Python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-Computer_Vision-5C3EE8?style=flat&logo=opencv&logoColor=white)
+![Gradio](https://img.shields.io/badge/Gradio-Web_Interface-FB923C?style=flat&logo=gradio&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-Array_Processing-013243?style=flat&logo=numpy&logoColor=white)
 
 </div>
 
 ---
 
-## Table of Contents
-
--   [Overview](#overview)
--   [Getting Started](#getting-started)
-    -   [Prerequisites](#prerequisites)
-    -   [Installation](#installation)
-    -   [Usage](#usage)
-    -   [Testing](#testing)
-
----
-
-## Overview
-
-pdf_enhancer is an innovative developer tool designed to automatically improve PDF document quality through image processing techniques. It converts PDFs into images, applies enhancements such as page straightening, contrast boosting, and background cleaning, then reconstructs polished PDFs suitable for printing or digital archiving.
-
-**Why pdf_enhancer?**
-
-This project simplifies complex PDF editing tasks with automation and speed. The core features include:
-
--   🎯 **🚀 Fast In-Memory Processing:** Enables quick, efficient handling of large documents without disk I/O bottlenecks.
--   🖼️ **🛠️ Automated Image Enhancement:** Detects and straightens pages, enhances contrast, and cleans backgrounds for professional results.
--   🌐 **🎨 User-Friendly Web Interface:** Built with Gradio, providing an accessible, interactive experience directly in the browser.
--   📄 **🔧 Seamless PDF & Image Handling:** Leverages PyMuPDF, OpenCV, and Pillow for robust document and image manipulation.
--   💡 **✨ High-Quality Output:** Produces clear, print-ready PDFs optimized for archiving and presentation.
+## 📖 Table of Contents
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Demo](#demo)
+- [Installation](#installation)
+- [Usage](#usage)
+- [License](#license)
 
 ---
 
-## Getting Started
+## 🧐 Overview
+
+**PDF Enhancer** is an open-source tool designed to rescue low-quality scanned documents. Whether you have dark backgrounds, skewed pages, or faint text from a mobile photo, this tool uses advanced computer vision to reconstruct a clean, print-ready PDF.
+
+It runs entirely locally on your machine—no internet required, ensuring complete privacy for your sensitive documents.
+
+---
+
+## ✨ Key Features
+
+* **🚀 Memory Efficient:** Uses Python Generators to process large PDFs page-by-page, preventing RAM crashes on huge files.
+* **📐 Smart Cropping:** Automatically detects document borders and straightens skewed pages. If no border is found, it intelligently preserves the full page.
+* **🎨 Professional Contrast:** Uses **CLAHE** (Contrast Limited Adaptive Histogram Equalization) instead of harsh binary thresholds, preserving signatures and stamps while making text crisp.
+* **🧹 Noise Reduction:** Automatically removes "salt and pepper" noise common in mobile scans.
+* **🌐 Simple Interface:** A clean web UI powered by **Gradio**—no command line knowledge needed after installation.
+
+---
+
+## 🖼️ Demo
+
+*(Add a screenshot here! It makes a huge difference. Example: "Original (Left) vs Enhanced (Right)")*
+
+> *Note: This tool runs on `localhost`, meaning your files never leave your computer.*
+
+---
+
+## ⚙️ Installation
 
 ### Prerequisites
+* Python 3.8 or higher
+* pip (Python Package Manager)
 
-This project requires the following dependencies:
-
--   **Programming Language:** Python
--   **Package Manager:** Pip
-
-### Installation
-
-Build pdf_enhancer from the source and install dependencies:
+### Steps
 
 1.  **Clone the repository:**
-    ```sh
-     https://github.com/ItsSp00ky/pdf_enhancer.git
-    ```
-2.  **Navigate to the project directory:**
-    ```sh
-     cd pdf_enhancer
-    ```
-3.  **Install the dependencies:**
-
-    **Using [pip](https://pypi.org/project/pip/):**
-    ```sh
-    ❯ pip install -r requirements.txt
+    ```bash
+    git clone [https://github.com/ItsSp00ky/pdf_enhancer.git](https://github.com/ItsSp00ky/pdf_enhancer.git)
     ```
 
-### Usage
+2.  **Navigate to the directory:**
+    ```bash
+    cd pdf_enhancer
+    ```
 
-Run the project with:
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-**Using [pip](https://pypi.org/project/pip/):**
+---
 
-```sh
-python pdf_enhancer.py
-```
-**Your terminal will display a local URL, usually http://127.0.0.1:7860.
-**
+## 🚀 Usage
 
-📜 License
-Copyright 2025 Ahmed Gali
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+1.  Run the application:
+    ```bash
+    python pdf_enhancer.py
+    ```
 
+2.  Open your browser and go to the local URL shown in the terminal (usually):
+    ```
+    [http://127.0.0.1:7860](http://127.0.0.1:7860)
+    ```
 
+3.  Upload your PDF, adjust the DPI slider, and click **Submit**!
 
+---
 
+## 📜 License
 
+Distributed under the MIT License. See `LICENSE` for more information.
+
+**Ahmed Gali** © 2025
