@@ -5,7 +5,7 @@
 
 [![Last Commit](https://img.shields.io/github/last-commit/ItsSp00ky/pdf_enhancer?style=flat&logo=git&logoColor=white&color=0080ff)](https://github.com/ItsSp00ky/pdf_enhancer/commits/main)
 [![Top Language](https://img.shields.io/github/languages/top/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)](https://github.com/ItsSp00ky/pdf_enhancer)
-[![License](https://img.shields.io/github/license/ItsSp00ky/pdf_enhancer?style=flat&color=0080ff)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0080ff?style=flat)](LICENSE)
 
 *Built with:*
 
@@ -119,6 +119,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
