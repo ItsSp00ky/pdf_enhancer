@@ -65,7 +65,7 @@ It runs entirely locally on your machine—no internet required, ensuring comple
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/ItsSp00ky/pdf_enhancer.git](https://github.com/ItsSp00ky/pdf_enhancer.git)
+    git clone https://github.com/ItsSp00ky/pdf_enhancer.git
     ```
 
 2.  **Navigate to the directory:**
@@ -89,7 +89,7 @@ It runs entirely locally on your machine—no internet required, ensuring comple
 
 2.  Open your browser and go to the local URL shown in the terminal (usually):
     ```
-    [http://127.0.0.1:7860](http://127.0.0.1:7860)
+    http://127.0.0.1:7860
     ```
 
 3.  Upload your PDF, adjust the DPI slider, and click **Submit**!
@@ -119,4 +119,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
