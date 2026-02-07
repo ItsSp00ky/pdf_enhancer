@@ -48,7 +48,8 @@ It runs entirely locally on your machine—no internet required, ensuring comple
 
 ## 🖼️ Demo
 
-*(Add a screenshot here! It makes a huge difference. Example: "Original (Left) vs Enhanced (Right)")*
+<img width="1920" height="1080" alt="Screenshot from 2026-02-08 00-59-56" src="https://github.com/user-attachments/assets/b27317be-0b8c-4b70-afd7-958c8cef5710" />
+
 
 > *Note: This tool runs on `localhost`, meaning your files never leave your computer.*
 
@@ -97,6 +98,25 @@ It runs entirely locally on your machine—no internet required, ensuring comple
 
 ## 📜 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+MIT License
 
-**Ahmed Gali** © 2025
+Copyright (c) 2025 Ahmed Gali
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
