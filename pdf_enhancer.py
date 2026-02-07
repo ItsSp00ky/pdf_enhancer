@@ -9,156 +9,156 @@ from PIL import Image
 import gradio as gr
 import os
 
-# --- PDF to Images ---
-def pdf_to_images_in_memory(pdf_path, dpi=200):
-    """Converts each page of a PDF file into a list of images."""
-    try:
-        doc = fitz.open(pdf_path)
-        images = []
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            pix = page.get_pixmap(dpi=dpi)
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 4:  # Handle RGBA to RGB conversion
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            images.append(img)
-        return images
-    except Exception as e:
-        raise gr.Error(f"Failed to read PDF. Error: {e}")
-
-
-# --- Image Processing Functions (Helper functions) ---
-def distance(p1, p2):
-    """Calculates the Euclidean distance between two points."""
-    return np.linalg.norm(p1 - p2)
-
-def order_rect(pts):
-    """Orders the four points of a rectangle contour."""
+# --- Geometry & Cropping Helpers ---
+def order_points(pts):
+    """Orders coordinates: top-left, top-right, bottom-right, bottom-left."""
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
     diff = np.diff(pts, axis=1)
-
-    rect[0] = pts[np.argmin(s)]    # Top-left
-    rect[2] = pts[np.argmax(s)]    # Bottom-right
-    rect[1] = pts[np.argmin(diff)] # Top-right
-    rect[3] = pts[np.argmax(diff)] # Bottom-left
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
     return rect
 
 def four_point_transform(image, pts):
-    """Applies a perspective transform to an image based on four points."""
-    rect = order_rect(pts)
+    """Applies perspective transform to flatten the document."""
+    rect = order_points(pts)
     (tl, tr, br, bl) = rect
 
-    # Calculate the width and height of the new image
-    widthA = distance(br, bl)
-    widthB = distance(tr, tl)
+    widthA = np.linalg.norm(br - bl)
+    widthB = np.linalg.norm(tr - tl)
     maxWidth = int(max(widthA, widthB))
 
-    heightA = distance(tr, br)
-    heightB = distance(tl, bl)
+    heightA = np.linalg.norm(tr - br)
+    heightB = np.linalg.norm(tl - bl)
     maxHeight = int(max(heightA, heightB))
 
-    # Define the destination points for the transformed image
     dst = np.array([
         [0, 0],
         [maxWidth - 1, 0],
         [maxWidth - 1, maxHeight - 1],
-        [0, maxHeight - 1]
-    ], dtype="float32")
+        [0, maxHeight - 1]], dtype="float32")
 
-    # Compute the perspective transform matrix and apply it
     M = cv2.getPerspectiveTransform(rect, dst)
-    warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
-    return warped
+    return cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 
-# --- Core Image Processing Logic ---
-def process_image_cv(image, area_threshold_ratio=0.4, upscale_factor=2):
+def process_single_page(image):
     """
-    Finds the main document in an image, straightens it, and applies a binary
-    threshold to create a "scanned" look.
+    1. Detects white paper on dark background.
+    2. Crops and flattens.
+    3. Converts to high-contrast flat black & white.
     """
-    img_height, img_width = image.shape[:2]
-    img_area = img_height * img_width
+    # --- Step 1: Smart Crop (Detect White Paper) ---
+    orig_h, orig_w = image.shape[:2]
+    ratio = 800.0 / orig_h
+    small_img = cv2.resize(image, (int(orig_w * ratio), 800))
+    
+    # Convert to HSV to find "White" paper easily
+    hsv = cv2.cvtColor(small_img, cv2.COLOR_BGR2HSV)
+    # Define range for "paper-like" colors (low saturation, high brightness)
+    lower_white = np.array([0, 0, 100]) # adjust if paper is darker
+    upper_white = np.array([180, 60, 255])
+    
+    mask = cv2.inRange(hsv, lower_white, upper_white)
+    
+    # Clean up the mask (remove noise)
+    kernel = np.ones((5,5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    # Pre-processing
-    blurred = cv2.GaussianBlur(image, (5, 5), 0)
-    edges = cv2.Canny(blurred, 10, 50)
-
-    # Find the largest 4-sided contour
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    # Find the largest contour in the mask (The Paper)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
 
     screenCnt = None
-    for c in contours:
+    if contours:
+        c = contours[0]
         peri = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        if len(approx) == 4 and cv2.contourArea(approx) > area_threshold_ratio * img_area:
-            screenCnt = approx.reshape(4, 2)
-            break
 
-    # Apply perspective transform if a document is found, otherwise use the full image
+        # Check if it looks like a page (4 corners & big enough)
+        if len(approx) == 4 and cv2.contourArea(approx) > (0.15 * (800 * int(orig_w * ratio))):
+            screenCnt = approx
+
+    # Apply Crop if found
     if screenCnt is not None:
+        screenCnt = screenCnt.reshape(4, 2) * (1.0 / ratio)
         warped = four_point_transform(image, screenCnt)
     else:
-        warped = image # Fallback to using the original image if no contour is found
+        # Fallback: Use the whole image if no paper edge detected
+        warped = image
 
-    # Upscale and apply adaptive threshold for a clean, scanned look
-    upscaled = cv2.resize(warped, (0, 0), fx=upscale_factor, fy=upscale_factor, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
-    
+    # --- Step 2: Make it Flat Black & White ---
+    # Convert to grayscale
+    gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+
+    # Adaptive Thresholding: This is the "Scanner" magic.
+    # It looks at local neighborhoods to decide black vs white.
+    # blockSize=21 (looks at local area), C=10 (constant subtracted from mean)
     binary = cv2.adaptiveThreshold(
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        blockSize=91,
-        C=30
+        blockSize=21,
+        C=10
     )
-    return binary
-
-# --- Images to PDF ---
-def images_to_pdf_from_arrays(images, output_pdf_path):
-    """Saves a list of image arrays to a single PDF file."""
-    if not images:
-        raise gr.Error("No images were processed to save.")
     
-    pil_images = [Image.fromarray(img).convert('RGB') for img in images]
-    pil_images[0].save(output_pdf_path, save_all=True, append_images=pil_images[1:])
+    # Optional: Denoise slightly to remove "pepper" noise
+    denoised = cv2.medianBlur(binary, 3) # Removes small black dots
 
+    return denoised
 
-# --- Main Processing Function for Gradio ---
-def enhance_pdf(pdf_file, dpi):
-    """
-    Main function that orchestrates the PDF processing workflow.
-    This function is called by the Gradio interface.
-    """
+# --- PDF Pipeline ---
+def enhance_pdf_pipeline(pdf_file, dpi_val):
     if pdf_file is None:
         raise gr.Error("Please upload a PDF file.")
 
-    # 1. Load PDF into images
-    images = pdf_to_images_in_memory(pdf_file.name, dpi)
-
-    # 2. Process each image
-    processed_images = [process_image_cv(img) for img in images]
-
-    # 3. Save processed images to a new PDF
-    output_pdf_path = "output_enhanced.pdf"
-    images_to_pdf_from_arrays(processed_images, output_pdf_path)
+    output_pdf_path = "output_scanned.pdf"
     
-    return output_pdf_path
+    try:
+        doc = fitz.open(pdf_file.name)
+        processed_pages = []
 
-# --- Gradio Interface Definition ---
+        for i, page in enumerate(doc):
+            # Render page to image
+            pix = page.get_pixmap(dpi=dpi_val)
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+            
+            if pix.n == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            elif pix.n == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            
+            # Process
+            enhanced_img = process_single_page(img)
+            
+            # Convert to PIL
+            pil_img = Image.fromarray(enhanced_img)
+            processed_pages.append(pil_img)
+
+        if processed_pages:
+            processed_pages[0].save(output_pdf_path, save_all=True, append_images=processed_pages[1:])
+            return output_pdf_path
+        else:
+            raise gr.Error("No pages processed.")
+
+    except Exception as e:
+        raise gr.Error(f"Error: {e}")
+
+# --- Gradio UI ---
 if __name__ == "__main__":
-    iface = gr.Interface(
-        fn=enhance_pdf,
-        inputs=[
-            gr.File(label="Upload your PDF", file_types=[".pdf"]),
-            gr.Slider(label="Scan Quality (DPI)", minimum=72, maximum=600, value=200, step=1)
-        ],
-        outputs=gr.File(label="Download Enhanced PDF"),
-        title="📄 PDF Print Enhancer",
-        description="Upload a PDF to automatically straighten pages and improve contrast for better printing.",
-        allow_flagging="never"
-    )
+    with gr.Blocks(title="📄 Clean Scanner") as iface:
+        gr.Markdown("# 📄 Clean Scan Converter")
+        gr.Markdown("Upload a PDF. Converts it to a **flat, cropped, black & white** scan.")
+        
+        with gr.Row():
+            in_file = gr.File(label="Upload PDF", file_types=[".pdf"])
+            dpi_slider = gr.Slider(minimum=100, maximum=400, value=200, step=50, label="Quality (DPI)")
+        
+        btn = gr.Button("Convert to Clean Scan", variant="primary")
+        out_file = gr.File(label="Download Result")
 
-    # Launch the web server
+        btn.click(fn=enhance_pdf_pipeline, inputs=[in_file, dpi_slider], outputs=out_file)
+
     iface.launch()
