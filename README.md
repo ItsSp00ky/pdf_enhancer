@@ -60,7 +60,7 @@ Build pdf_enhancer from the source and install dependencies:
 
 1.  **Clone the repository:**
     ```sh
-    ❯ [https://github.com/ItsSp00ky/pdf_enhancer](https://github.com/ItsSp00ky/pdf_enhancer.git)
+    ❯ https://github.com/ItsSp00ky/pdf_enhancer.git
     ```
 2.  **Navigate to the project directory:**
     ```sh
@@ -88,6 +88,7 @@ python pdf_enhancer.py
 📜 License
 Copyright 2025 Ahmed Gali
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 
 
 
