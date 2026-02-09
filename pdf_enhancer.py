@@ -146,7 +146,7 @@ def enhance_pdf_pipeline(pdf_file, dpi_val):
     except Exception as e:
         raise gr.Error(f"Error: {e}")
 
-# --- Gradio UI ---
+# ---- Gradio UI ----
 if __name__ == "__main__":
     with gr.Blocks(title="📄 Clean Scanner") as iface:
         gr.Markdown("# 📄 Clean Scan Converter")
