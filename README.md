@@ -31,7 +31,7 @@ The tool runs **100% locally** on your machine—ensuring complete privacy for y
 Don't want to deal with Python scripts? You can run the application immediately:
 
 1. Go to the **[Releases](https://github.com/ItsSp00ky/pdf_enhancer/releases)** page.
-2. Download the latest `pdf_enhancer.exe`.
+2. Download the latest `PDFEnhancer.exe`.
 3. Double-click to run! 
 
 ---
@@ -96,6 +96,7 @@ See the [LICENSE](LICENSE) file for more details.
 <div align="center">
   Developed by <a href="https://github.com/ItsSp00ky">Ahmed Gali</a>
 </div>
+
 
 
 
