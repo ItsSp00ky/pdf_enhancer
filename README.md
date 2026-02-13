@@ -26,26 +26,37 @@ The tool runs **100% locally** on your machine—ensuring complete privacy for y
 
 ---
 
+## 🚀 Quick Start (Recommended)
+
+Don't want to deal with Python scripts? You can run the application immediately:
+
+1. Go to the **[Releases](https://github.com/ItsSp00ky/pdf_enhancer/releases)** page.
+2. Download the latest `pdf_enhancer.exe`.
+3. Double-click to run! 
+
+---
+
 ## ✨ Key Features
 
 * **🎨 Professional Enhancement:** Automatically converts shadowed or gray backgrounds into pure white while maintaining crisp, black text.
-* **📐 Smart Geometry Correction:** Detects document borders, crops excess background, and straightens tilted (skewed) pages using perspective transforms.
-* **👁️ Real-time Preview:** Integrated preview window allows you to see the results of the first page before processing the entire document.
-* **⚡ Multi-threaded Engine:** Conversion runs on a background thread to keep the interface responsive during heavy processing.
-* **📦 Resolution Control:** Adjustable DPI settings (100–400) to give you control over the balance between quality and file size.
+* **📐 Smart Geometry Correction:** Detects document borders, crops excess background, and straightens tilted (skewed) pages.
+* **👁️ Real-time Preview:** Integrated preview window allows you to see the results of the first page before processing.
+* **⚡ Multi-threaded Engine:** Conversion runs on a background thread to keep the interface responsive.
+* **📦 Resolution Control:** Adjustable DPI settings (100–400) to balance quality and file size.
 * **🚀 Modern Desktop UI:** Built with `customtkinter` for a sleek, user-friendly dark-mode experience.
 
 ---
 
 ## 🖼️ Preview
+<img width="696" height="562" alt="Screenshot 2026-02-13 201217" src="https://github.com/user-attachments/assets/915e355c-9925-4e09-b4af-7b946dba6345" />
 
-<img width="696" height="562" alt="Screenshot 2026-02-13 201217" src="https://github.com/user-attachments/assets/b17b704c-61d9-4d0a-953e-574e0c5bf2f8" />
-
-![1769518501744](https://github.com/user-attachments/assets/046ba140-736c-4ac5-8023-d7f7ec41bc43)
+![1769518501744](https://github.com/user-attachments/assets/2be2a9d0-371d-4fa4-93a0-2c83b73ac876)
 
 ---
 
-## ⚙️ Installation
+## ⚙️ Developer Installation
+
+If you prefer to run the source code or contribute to the project:
 
 ### Prerequisites
 * Python 3.8 or higher
@@ -85,5 +96,6 @@ See the [LICENSE](LICENSE) file for more details.
 <div align="center">
   Developed by <a href="https://github.com/ItsSp00ky">Ahmed Gali</a>
 </div>
+
 
 
