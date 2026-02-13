@@ -39,6 +39,7 @@ The tool runs **100% locally** on your machine—ensuring complete privacy for y
 
 ## 🖼️ Preview
 
+![1769518501744](https://github.com/user-attachments/assets/046ba140-736c-4ac5-8023-d7f7ec41bc43)
 
 
 ---
@@ -83,3 +84,4 @@ See the [LICENSE](LICENSE) file for more details.
 <div align="center">
   Developed by <a href="https://github.com/ItsSp00ky">Ahmed Gali</a>
 </div>
+
