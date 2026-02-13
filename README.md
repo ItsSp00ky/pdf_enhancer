@@ -11,47 +11,35 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-Computer_Vision-5C3EE8?style=flat&logo=opencv&logoColor=white)
-![Gradio](https://img.shields.io/badge/Gradio-Web_Interface-FB923C?style=flat&logo=gradio&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy-Array_Processing-013243?style=flat&logo=numpy&logoColor=white)
+![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-005FB8?style=flat)
+![PyMuPDF](https://img.shields.io/badge/PDF-PyMuPDF-FF0000?style=flat)
 
 </div>
 
 ---
 
-## 📖 Table of Contents
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Demo](#demo)
-- [Installation](#installation)
-- [Usage](#usage)
-- [License](#license)
-
----
-
 ## 🧐 Overview
 
-**PDF Enhancer** is an open-source tool designed to rescue low-quality scanned documents. Whether you have dark backgrounds, skewed pages, or faint text from a mobile photo, this tool uses advanced computer vision to reconstruct a clean, print-ready PDF.
+**PDF Enhancer** is a specialized desktop application designed to rescue low-quality scanned or photographed documents. Using advanced computer vision techniques, it reconstructs clean, high-contrast, and print-ready PDFs. 
 
-It runs entirely locally on your machine—no internet required, ensuring complete privacy for your sensitive documents.
+The tool runs **100% locally** on your machine—ensuring complete privacy for your sensitive documents with no internet or server uploads required.
 
 ---
 
 ## ✨ Key Features
 
-* **🚀 Memory Efficient:** Uses Python Generators to process large PDFs page-by-page, preventing RAM crashes on huge files.
-* **📐 Smart Cropping:** Automatically detects document borders and straightens skewed pages. If no border is found, it intelligently preserves the full page.
-* **🎨 Professional Contrast:** Uses **CLAHE** (Contrast Limited Adaptive Histogram Equalization) instead of harsh binary thresholds, preserving signatures and stamps while making text crisp.
-* **🧹 Noise Reduction:** Automatically removes "salt and pepper" noise common in mobile scans.
-* **🌐 Simple Interface:** A clean web UI powered by **Gradio**—no command line knowledge needed after installation.
+* **🎨 Professional Enhancement:** Automatically converts shadowed or gray backgrounds into pure white while maintaining crisp, black text.
+* **📐 Smart Geometry Correction:** Detects document borders, crops excess background, and straightens tilted (skewed) pages using perspective transforms.
+* **👁️ Real-time Preview:** Integrated preview window allows you to see the results of the first page before processing the entire document.
+* **⚡ Multi-threaded Engine:** Conversion runs on a background thread to keep the interface responsive during heavy processing.
+* **📦 Resolution Control:** Adjustable DPI settings (100–400) to give you control over the balance between quality and file size.
+* **🚀 Modern Desktop UI:** Built with `customtkinter` for a sleek, user-friendly dark-mode experience.
 
 ---
 
-## 🖼️ Demo
-
-<img width="1920" height="1080" alt="Screenshot from 2026-02-08 00-59-56" src="https://github.com/user-attachments/assets/b27317be-0b8c-4b70-afd7-958c8cef5710" />
+## 🖼️ Preview
 
 
-> *Note: This tool runs on `localhost`, meaning your files never leave your computer.*
 
 ---
 
@@ -59,67 +47,39 @@ It runs entirely locally on your machine—no internet required, ensuring comple
 
 ### Prerequisites
 * Python 3.8 or higher
-* pip (Python Package Manager)
+* `pip` (Python Package Manager)
 
 ### Steps
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/ItsSp00ky/pdf_enhancer.git
-    ```
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/ItsSp00ky/pdf_enhancer.git
+   cd pdf_enhancer
 
-2.  **Navigate to the directory:**
-    ```bash
-    cd pdf_enhancer
-    ```
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+3. **Run the application:**
+   ```bash
+   python main.py
 
 ---
 
 ## 🚀 Usage
 
-1.  Run the application:
-    ```bash
-    python pdf_enhancer.py
-    ```
-
-2.  Open your browser and go to the local URL shown in the terminal (usually):
-    ```
-    http://127.0.0.1:7860
-    ```
-
-3.  Upload your PDF, adjust the DPI slider, and click **Submit**!
+1. **Browse:** Select your input PDF file.
+2. **Adjust:** Set your desired Scan Quality (DPI) using the slider.
+3. **Preview:** Use the "Preview First Page" button to check the result.
+4. **Save:** Click "Convert & Save" to choose your output location. The final document will open automatically upon completion.
 
 ---
 
 ## 📜 License
 
-MIT License
+MIT License - Copyright (c) 2025 Ahmed Gali.
+See the [LICENSE](LICENSE) file for more details.
 
-Copyright (c) 2025 Ahmed Gali
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-
-
+<div align="center">
+  Developed by <a href="https://github.com/ItsSp00ky">Ahmed Gali</a>
+</div>
