@@ -1,5 +1,6 @@
-PyMuPDF
+customtkinter
+pymupdf
 opencv-python-headless
 numpy
-Pillow
-gradio
+pillow
+pyinstaller
