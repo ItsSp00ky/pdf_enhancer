@@ -1,6 +1,6 @@
-customtkinter
-pymupdf
-opencv-python-headless
+PyMuPDF
+opencv-python
 numpy
-pillow
-pyinstaller
+Pillow
+customtkinter
+tkinterdnd2
