@@ -1,5 +1,4 @@
-PyMuPDF
-opencv-python
+pypdfium2
 numpy
 Pillow
 customtkinter

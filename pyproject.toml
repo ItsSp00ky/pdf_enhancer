@@ -8,10 +8,9 @@ authors = [{ name = "Ahmed Gali" }]
 requires-python = ">=3.9"
 
 dependencies = [
-    "pymupdf>=1.24",        # fitz.Document context manager + page_count
-    "opencv-python>=4.8",
+    "pypdfium2>=4.0",       # Lightweight PDF rendering engine (PDFium)
     "numpy>=1.26",
-    "pillow>=9.2",          # ImageOps.exif_transpose, 1-bit (CCITT G4) PDF save
+    "pillow>=9.2",          # ImageOps, transforms, filtering, 1-bit CCITT G4 PDF save
     "customtkinter>=5.2",
     "tkinterdnd2>=0.4",
 ]
