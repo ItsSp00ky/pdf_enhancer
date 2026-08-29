@@ -1,5 +1,0 @@
-pypdfium2
-numpy
-Pillow
-customtkinter
-tkinterdnd2
