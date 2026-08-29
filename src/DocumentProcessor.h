@@ -10,7 +10,7 @@
 
 class DocumentProcessor {
 public:
-    static cv::Mat processSinglePage(const cv::Mat& bgrImage);
+    static cv::Mat processSinglePage(const cv::Mat& bgrImage, int dpi = 200);
     static std::vector<cv::Mat> loadPages(const QStringList& inputFiles, int dpi, QString* error = nullptr);
     static bool saveAsPdf(const std::vector<cv::Mat>& processedPages, const QString& outputPath, int dpi, QString* error = nullptr);
     static bool isPdf(const QString& path);

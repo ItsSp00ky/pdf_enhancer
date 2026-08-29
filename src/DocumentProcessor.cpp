@@ -1,6 +1,7 @@
 #include "DocumentProcessor.h"
 
 #include <QFileInfo>
+#include <QImageReader>
 #include <QPainter>
 #include <QPdfDocument>
 #include <QPdfWriter>
@@ -12,6 +13,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 cv::Mat orderPoints(const cv::Mat& pts) {
@@ -84,7 +86,7 @@ bool DocumentProcessor::isPdf(const QString& path) {
     return path.endsWith(".pdf", Qt::CaseInsensitive);
 }
 
-cv::Mat DocumentProcessor::processSinglePage(const cv::Mat& bgrImage) {
+cv::Mat DocumentProcessor::processSinglePage(const cv::Mat& bgrImage, int dpi) {
     if (bgrImage.empty()) {
         return {};
     }
@@ -143,9 +145,17 @@ cv::Mat DocumentProcessor::processSinglePage(const cv::Mat& bgrImage) {
     cv::Mat gray;
     cv::cvtColor(warped, gray, cv::COLOR_BGR2GRAY);
 
+    // Scale adaptive threshold window and noise median filter with DPI
+    int blockSize = std::max(11, static_cast<int>(std::round(21.0 * (static_cast<double>(dpi) / 200.0))));
+    if (blockSize % 2 == 0) {
+        blockSize += 1;
+    }
+
     cv::Mat binary;
-    cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 21, 10);
-    cv::medianBlur(binary, binary, 3);
+    cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, blockSize, 10);
+    
+    int medianSize = (dpi < 300) ? 3 : 5;
+    cv::medianBlur(binary, binary, medianSize);
     return binary;
 }
 
@@ -301,7 +311,9 @@ std::vector<cv::Mat> DocumentProcessor::loadPdfPages(const QString& pdfPath, int
 }
 
 cv::Mat DocumentProcessor::loadImageToBgr(const QString& path, QString* error) {
-    QImage qImage(path);
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    QImage qImage = reader.read();
     if (qImage.isNull()) {
         if (error) {
             *error = QString("Could not load image: %1").arg(QFileInfo(path).fileName());

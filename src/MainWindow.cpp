@@ -227,18 +227,27 @@ void MainWindow::onProcessingFinished() {
             return;
         }
 
+        int currentDpi = dpiSlider_->value();
         cv::Mat first = result.processed.front();
         QImage preview = first.channels() == 1
             ? QImage(first.data, first.cols, first.rows, static_cast<int>(first.step), QImage::Format_Grayscale8).copy()
             : QImage(first.data, first.cols, first.rows, static_cast<int>(first.step), QImage::Format_RGB888).copy();
 
         auto* dlg = new QDialog(this);
-        dlg->setWindowTitle("First Item Preview");
-        dlg->resize(600, 720);
+        dlg->setWindowTitle(QString("Preview - %1×%2 px @ %3 DPI").arg(first.cols).arg(first.rows).arg(currentDpi));
+        dlg->resize(620, 720);
         auto* l = new QVBoxLayout(dlg);
+
+        auto* infoLabel = new QLabel(QString("Previewing First Page • %1×%2 px (%3 DPI)").arg(first.cols).arg(first.rows).arg(currentDpi), dlg);
+        infoLabel->setAlignment(Qt::AlignCenter);
+        QFont infoFont = infoLabel->font();
+        infoFont.setBold(true);
+        infoLabel->setFont(infoFont);
+        l->addWidget(infoLabel);
+
         auto* imgLabel = new QLabel(dlg);
         imgLabel->setAlignment(Qt::AlignCenter);
-        imgLabel->setPixmap(QPixmap::fromImage(preview).scaled(560, 680, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        imgLabel->setPixmap(QPixmap::fromImage(preview).scaled(560, 640, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         l->addWidget(imgLabel);
         dlg->setLayout(l);
         dlg->exec();
@@ -341,10 +350,10 @@ void MainWindow::processAsync(const QString& outputPath, bool previewOnly) {
         }
 
         if (previewOnly && !pages.empty()) {
-            result.processed.push_back(DocumentProcessor::processSinglePage(pages.front()));
+            result.processed.push_back(DocumentProcessor::processSinglePage(pages.front(), dpi));
         } else {
             for (const auto& page : pages) {
-                result.processed.push_back(DocumentProcessor::processSinglePage(page));
+                result.processed.push_back(DocumentProcessor::processSinglePage(page, dpi));
             }
         }
 
