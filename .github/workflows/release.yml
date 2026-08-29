@@ -92,13 +92,16 @@ jobs:
             Write-Host "opencv_world*.dll not found in $opencvBin; continuing without copying OpenCV DLL."
           }
           mkdir -Force release-assets
+          Copy-Item .\build\Release\pdf_enhancer_cpp.exe release-assets\PDF_Enhancer_v2.0_Windows.exe -Force
           Compress-Archive -Path .\build\Release\* -DestinationPath release-assets\PDF_Enhancer_v2.0_Windows_x64.zip
 
       - name: Upload Windows Release Asset
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: release-assets\PDF_Enhancer_v2.0_Windows_x64.zip
+          path: |
+            release-assets/PDF_Enhancer_v2.0_Windows_x64.zip
+            release-assets/PDF_Enhancer_v2.0_Windows.exe
 
   build-linux:
     name: Build Linux Release (x86_64)
@@ -118,7 +121,7 @@ jobs:
       - name: Build C++ Linux Binary
         run: cmake --build build --config Release -j$(nproc)
 
-      - name: Package Linux Release Tarball
+      - name: Package Linux & Fedora Release Tarballs
         run: |
           mkdir -p release-assets/pdf-enhancer-linux
           cp build/pdf_enhancer_cpp release-assets/pdf-enhancer-linux/pdf-enhancer
@@ -128,6 +131,7 @@ jobs:
           
           cd release-assets
           tar -czf PDF_Enhancer_v2.0_Linux_x86_64.tar.gz pdf-enhancer-linux/
+          cp PDF_Enhancer_v2.0_Linux_x86_64.tar.gz PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
           cp pdf-enhancer-linux/pdf-enhancer PDF_Enhancer_v2.0_Linux_x86_64
 
       - name: Upload Linux Release Asset
@@ -136,6 +140,7 @@ jobs:
           name: linux-release
           path: |
             release-assets/PDF_Enhancer_v2.0_Linux_x86_64.tar.gz
+            release-assets/PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
             release-assets/PDF_Enhancer_v2.0_Linux_x86_64
 
   publish-release:
@@ -161,7 +166,9 @@ jobs:
         with:
           files: |
             release-files/PDF_Enhancer_v2.0_Windows_x64.zip
-            release-files/PDF_Enhancer_Linux_x86_64.tar.gz
-            release-files/PDF_Enhancer_Linux_x86_64
+            release-files/PDF_Enhancer_v2.0_Windows.exe
+            release-files/PDF_Enhancer_v2.0_Linux_x86_64.tar.gz
+            release-files/PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
+            release-files/PDF_Enhancer_v2.0_Linux_x86_64
           generate_release_notes: true
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
