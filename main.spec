@@ -12,17 +12,6 @@ for pkg in ['customtkinter', 'tkinterdnd2', 'pypdfium2', 'pypdfium2_raw']:
     binaries += tmp_ret[1]
     hiddenimports += tmp_ret[2]
 
-# On Windows x64, prune foreign OS and architecture binaries from tkinterdnd2/pypdfium2
-if sys.platform == 'win32':
-    binaries = [
-        b for b in binaries
-        if not (
-            'tkinterdnd2' in b[0] and not any(k in b[0].lower() for k in ['win-x64', 'win_amd64'])
-        ) and not (
-            'pypdfium2' in b[0] and (b[0].endswith('.so') or b[0].endswith('.dylib'))
-        )
-    ]
-
 excludes = [
     'unittest',
     'email',
@@ -68,9 +57,16 @@ a = Analysis(
     optimize=2,
 )
 
-# Strip unused heavy DLLs & foreign binaries
-strip_keywords = ['ffmpeg', '_avif', 'avif', 'linux-arm', 'linux-x64', 'osx-arm', 'osx-x64', 'win-arm64', 'win-x86']
-a.binaries = [b for b in a.binaries if not any(k in b[0].lower() for k in strip_keywords)]
+# Platform-specific foreign binary pruning to reduce executable size
+if sys.platform == 'win32':
+    strip_keywords = ['ffmpeg', '_avif', 'avif', 'linux-', 'osx-', 'win-arm64', 'win-x86', '.so', '.dylib']
+    a.binaries = [b for b in a.binaries if not any(k in b[0].lower() for k in strip_keywords)]
+elif sys.platform.startswith('linux'):
+    strip_keywords = ['ffmpeg', '_avif', 'avif', 'win-', 'osx-', 'linux-arm', '.dll', '.dylib']
+    a.binaries = [b for b in a.binaries if not any(k in b[0].lower() for k in strip_keywords)]
+elif sys.platform == 'darwin':
+    strip_keywords = ['ffmpeg', '_avif', 'avif', 'win-', 'linux-', '.dll', '.so']
+    a.binaries = [b for b in a.binaries if not any(k in b[0].lower() for k in strip_keywords)]
 
 # Strip redundant Tcl encoding files & tests from GUI data to reduce bundle size
 a.datas = [
