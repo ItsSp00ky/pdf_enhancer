@@ -2,10 +2,9 @@
 # Copyright (c) 2025 Ahmed Gali
 # Licensed under the MIT License
 
-import fitz  # PyMuPDF
-import cv2
+import pypdfium2 as pdfium
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter, ImageChops
 import os
 import sys
 import threading
@@ -56,88 +55,154 @@ def order_points(pts):
     return rect
 
 
-def four_point_transform(image, pts):
+def four_point_transform(img_pil, pts):
     rect = order_points(pts)
     (tl, tr, br, bl) = rect
     maxWidth = max(1, int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl))))
     maxHeight = max(1, int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl))))
-    dst = np.array([
-        [0, 0],
-        [maxWidth - 1, 0],
-        [maxWidth - 1, maxHeight - 1],
-        [0, maxHeight - 1]], dtype="float32")
-    M = cv2.getPerspectiveTransform(rect, dst)
-    return cv2.warpPerspective(image, M, (maxWidth, maxHeight))
+    # Pillow QUAD data format: (tl_x, tl_y, bl_x, bl_y, br_x, br_y, tr_x, tr_y)
+    quad_data = (tl[0], tl[1], bl[0], bl[1], br[0], br[1], tr[0], tr[1])
+    return img_pil.transform(
+        (maxWidth, maxHeight),
+        Image.Transform.QUAD,
+        quad_data,
+        resample=Image.Resampling.BILINEAR
+    )
 
 
-def find_page_quad(image):
+def find_page_quad(img_pil):
     """Locate the document corners in full-resolution coordinates, or None."""
-    height = image.shape[0]
-    scale = min(1.0, DETECT_HEIGHT / height)
-    small = cv2.resize(image, None, fx=scale, fy=scale) if scale < 1.0 else image
+    orig_w, orig_h = img_pil.size
+    scale = min(1.0, DETECT_HEIGHT / orig_h)
+    if scale < 1.0:
+        small_w = max(1, int(orig_w * scale))
+        small_h = max(1, int(orig_h * scale))
+        small = img_pil.resize((small_w, small_h), Image.Resampling.BILINEAR)
+    else:
+        small = img_pil
+        small_w, small_h = orig_w, orig_h
 
-    # Isolate the (bright, desaturated) sheet of paper from the background.
-    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, np.array([0, 0, 100]), np.array([180, 60, 255]))
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    rgb = np.asarray(small.convert("RGB"), dtype=np.float32)
+    r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    max_c = np.maximum(np.maximum(r, g), b)
+    min_c = np.minimum(np.minimum(r, g), b)
 
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    # Paper mask: V >= 100 and S <= 60 (OpenCV HSV equivalent: [0,0,100] to [180,60,255])
+    mask = (max_c >= 100.0) & ((max_c - min_c) <= (60.0 / 255.0) * max_c)
+
+    mask_img = Image.fromarray((mask.astype(np.uint8) * 255), mode="L")
+    # Open / Close morphology with 5x5 kernel
+    opened = mask_img.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.MaxFilter(5))
+    closed = opened.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+
+    # Extract boundary pixels for fast convex hull
+    eroded = closed.filter(ImageFilter.MinFilter(3))
+    boundary = ImageChops.difference(closed, eroded)
+
+    ys, xs = np.where(np.asarray(boundary) > 0)
+    if len(xs) < 4:
         return None
 
-    largest = max(contours, key=cv2.contourArea)
-    approx = cv2.approxPolyDP(largest, 0.02 * cv2.arcLength(largest, True), True)
+    pts = np.column_stack([xs, ys]).astype(np.float32)
+
+    # Graham scan convex hull
+    start_idx = np.lexsort((pts[:, 0], pts[:, 1]))[0]
+    start = pts[start_idx]
+    diff = pts - start
+    angles = np.arctan2(diff[:, 1], diff[:, 0])
+    dists = np.hypot(diff[:, 0], diff[:, 1])
+    order = np.lexsort((-dists, angles))
+    sorted_pts = pts[order]
+
+    hull = [start, sorted_pts[0]]
+    for p in sorted_pts[1:]:
+        while len(hull) >= 2:
+            v1 = hull[-1] - hull[-2]
+            v2 = p - hull[-1]
+            cross = v1[0] * v2[1] - v1[1] * v2[0]
+            if cross <= 0:
+                hull.pop()
+            else:
+                break
+        hull.append(p)
+    hull = np.array(hull, dtype=np.float32)
+
+    # Perimeter
+    diffs = np.diff(np.vstack([hull, hull[0]]), axis=0)
+    perim = np.sum(np.hypot(diffs[:, 0], diffs[:, 1]))
+
+    # Douglas-Peucker polygon simplification (at 2% perimeter)
+    def point_line_distance(pts_arr, p1, p2):
+        diff_l = p2 - p1
+        norm_l = np.hypot(diff_l[0], diff_l[1])
+        if norm_l < 1e-6:
+            return np.hypot(pts_arr[:, 0] - p1[0], pts_arr[:, 1] - p1[1])
+        return np.abs(diff_l[0] * (p1[1] - pts_arr[:, 1]) - (p1[0] - pts_arr[:, 0]) * diff_l[1]) / norm_l
+
+    def dp(pts_arr, eps):
+        if len(pts_arr) <= 2:
+            return pts_arr
+        dists_arr = point_line_distance(pts_arr[1:-1], pts_arr[0], pts_arr[-1])
+        if len(dists_arr) == 0:
+            return pts_arr
+        dmax_i = np.argmax(dists_arr) + 1
+        if dists_arr[dmax_i - 1] > eps:
+            r1 = dp(pts_arr[:dmax_i + 1], eps)
+            r2 = dp(pts_arr[dmax_i:], eps)
+            return np.vstack((r1[:-1], r2))
+        return np.array([pts_arr[0], pts_arr[-1]])
+
+    closed_hull = np.vstack([hull, hull[0]])
+    approx = dp(closed_hull, 0.02 * perim)
+    if np.allclose(approx[0], approx[-1]):
+        approx = approx[:-1]
+
     if len(approx) != 4:
         return None
 
-    small_h, small_w = small.shape[:2]
-    if cv2.contourArea(approx) < MIN_PAGE_AREA_RATIO * small_w * small_h:
+    # Shoelace formula for polygon area
+    x_coords, y_coords = approx[:, 0], approx[:, 1]
+    area = 0.5 * np.abs(np.dot(x_coords, np.roll(y_coords, 1)) - np.dot(y_coords, np.roll(x_coords, 1)))
+    if area < MIN_PAGE_AREA_RATIO * small_w * small_h:
         return None
 
-    return approx.reshape(4, 2).astype("float32") / scale
+    return approx / scale
 
 
-def process_single_page(image):
-    """Deskew/crop a BGR page image and return it as a binarised grayscale array."""
-    quad = find_page_quad(image)
-    warped = four_point_transform(image, quad) if quad is not None else image
+def process_single_page(img_pil, dpi=200):
+    """Deskew/crop a PIL page image and return it as a binarised 1-bit PIL Image."""
+    quad = find_page_quad(img_pil)
+    warped = four_point_transform(img_pil, quad) if quad is not None else img_pil
 
-    gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10)
-    return cv2.medianBlur(binary, 3)
+    gray = warped.convert("L")
+    # Adaptive Gaussian threshold (radius scaled proportionally with DPI for consistent stroke width)
+    radius = max(1.0, (dpi / 200.0) * 3.5)
+    blurred = gray.filter(ImageFilter.GaussianBlur(radius=radius))
+    arr_g = np.asarray(gray, dtype=np.int16)
+    arr_b = np.asarray(blurred, dtype=np.int16)
+    binary = np.where(arr_g > (arr_b - 10), 255, 0).astype(np.uint8)
+
+    median_size = 3 if dpi < 300 else 5
+    clean = Image.fromarray(binary, mode="L").filter(ImageFilter.MedianFilter(size=median_size))
+    return clean.convert("1")
 
 
 # --- Input Loading ---
-def pixmap_to_bgr(pix):
-    """Convert a PyMuPDF pixmap to a BGR numpy array (stride-safe)."""
-    rows = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)
-    img = rows[:, :pix.width * pix.n].reshape(pix.height, pix.width, pix.n)
-    if pix.n == 1:
-        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    if pix.n == 4:
-        # MuPDF stores premultiplied alpha; flatten onto white so a transparent
-        # page background does not become black and invert after thresholding.
-        alpha = img[:, :, 3:4].astype(np.uint16)
-        img = np.clip(img[:, :, :3].astype(np.uint16) + (255 - alpha), 0, 255).astype(np.uint8)
-    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+def pdf_page_to_image(page, dpi):
+    """Render a PDFium page to a PIL RGB image at requested DPI."""
+    return page.render(scale=dpi / 72.0).to_pil().convert("RGB")
 
 
-def load_image_to_bgr(path):
-    """Load an image file and convert to BGR format (OpenCV compatible)."""
+def load_image(path):
+    """Load an image file and convert to RGB format with transparency flattened onto white."""
     with Image.open(path) as opened:
         img = ImageOps.exif_transpose(opened)
         if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-            # Flatten transparency onto white so it does not threshold to black.
             rgba = img.convert("RGBA")
             flattened = Image.new("RGB", rgba.size, (255, 255, 255))
             flattened.paste(rgba, mask=rgba)
-            img = flattened
-        else:
-            img = img.convert("RGB")
-        return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+            return flattened
+        return img.convert("RGB")
 
 
 def is_pdf(path):
@@ -150,8 +215,8 @@ def count_source_pages(paths):
     total = 0
     for path in paths:
         if is_pdf(path):
-            with fitz.open(path) as doc:
-                total += doc.page_count
+            with pdfium.PdfDocument(path) as doc:
+                total += len(doc)
         else:
             total += 1
     return total
@@ -170,7 +235,7 @@ def describe_selection(paths):
 
 
 def iter_source_images(paths, dpi):
-    """Yield (index, total, bgr_image) for every page of the whole selection.
+    """Yield (index, total, pil_image) for every page of the whole selection.
 
     PDFs are rasterised page by page and images are loaded whole; both are
     flattened into one continuous page stream in the order they were selected.
@@ -179,12 +244,12 @@ def iter_source_images(paths, dpi):
     index = 0
     for path in paths:
         if is_pdf(path):
-            with fitz.open(path) as doc:
-                for page_number in range(doc.page_count):
-                    yield index, total, pixmap_to_bgr(doc[page_number].get_pixmap(dpi=dpi))
+            with pdfium.PdfDocument(path) as doc:
+                for page_number in range(len(doc)):
+                    yield index, total, pdf_page_to_image(doc[page_number], dpi)
                     index += 1
         else:
-            yield index, total, load_image_to_bgr(path)
+            yield index, total, load_image(path)
             index += 1
 
 
@@ -350,7 +415,22 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         webbrowser.open("https://github.com/ItsSp00ky/pdf_enhancer")
 
     def update_dpi_label(self, value):
-        self.lbl_dpi.configure(text=f"Scan Quality (DPI): {int(value)}")
+        dpi_int = int(round(value))
+        self.lbl_dpi.configure(text=f"Scan Quality (DPI): {dpi_int}")
+        # If preview window is open, dynamically refresh preview at new DPI
+        if hasattr(self, "preview_window") and self.preview_window and self.preview_window.winfo_exists() and self.input_files:
+            if hasattr(self, "_dpi_timer") and self._dpi_timer:
+                try:
+                    self.after_cancel(self._dpi_timer)
+                except Exception:
+                    pass
+            self._dpi_timer = self.after(250, lambda: self.refresh_preview_dpi(dpi_int))
+
+    def refresh_preview_dpi(self, dpi):
+        if self.preview_window and self.preview_window.winfo_exists() and self.input_files:
+            if hasattr(self, "lbl_preview_info") and self.lbl_preview_info.winfo_exists():
+                self.lbl_preview_info.configure(text=f"Rendering at {dpi} DPI...")
+            threading.Thread(target=self.run_preview, args=(self.input_files[0], dpi), daemon=True).start()
 
     def set_input_files(self, paths, source):
         self.input_files = list(paths)
@@ -398,15 +478,19 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             messagebox.showwarning("Warning", "Please select or drop a file first!")
             return
 
+        dpi = int(round(self.slider_dpi.get()))
+
         if self.preview_window is None or not self.preview_window.winfo_exists():
             self.preview_window = ctk.CTkToplevel(self)
-            self.preview_window.title("First Item Preview")
-            self.preview_window.geometry("600x700")
+            self.preview_window.title("Preview")
+            self.preview_window.geometry("620x720")
             self.preview_window.attributes("-topmost", True)
             self.set_icon(self.preview_window)
 
-            lbl_info = ctk.CTkLabel(self.preview_window, text="Previewing First Item Only", font=("Arial", 14, "bold"))
-            lbl_info.pack(pady=10)
+            self.lbl_preview_info = ctk.CTkLabel(
+                self.preview_window, text=f"Previewing First Item @ {dpi} DPI", font=("Arial", 14, "bold")
+            )
+            self.lbl_preview_info.pack(pady=10)
 
             self.preview_img_label = ctk.CTkLabel(
                 self.preview_window, text="Processing...", width=500, height=600,
@@ -414,46 +498,54 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             )
             self.preview_img_label.pack(padx=20, pady=(0, 20), expand=True, fill="both")
         else:
+            if hasattr(self, "lbl_preview_info") and self.lbl_preview_info.winfo_exists():
+                self.lbl_preview_info.configure(text=f"Previewing First Item @ {dpi} DPI")
             self.preview_img_label.configure(text="Processing...", image=None)
 
         self.preview_window.focus()
         self.btn_preview.configure(state="disabled")
 
         # Snapshot the widget values here: they must not be read off the worker thread.
-        args = (self.input_files[0], int(self.slider_dpi.get()))
+        args = (self.input_files[0], dpi)
         threading.Thread(target=self.run_preview, args=args, daemon=True).start()
 
     def run_preview(self, path, dpi):
         try:
             if is_pdf(path):
-                with fitz.open(path) as doc:
-                    if doc.page_count == 0:
+                with pdfium.PdfDocument(path) as doc:
+                    if len(doc) == 0:
                         raise ValueError("PDF is empty.")
-                    image = pixmap_to_bgr(doc[0].get_pixmap(dpi=dpi))
+                    image = pdf_page_to_image(doc[0], dpi)
             else:
-                image = load_image_to_bgr(path)
-            preview = Image.fromarray(process_single_page(image))
+                image = load_image(path)
+            preview = process_single_page(image, dpi=dpi)
         except Exception as e:
             print(f"Preview Error: {e}")
             self.run_on_ui(self.preview_failed, str(e))
         else:
-            self.run_on_ui(self.update_preview_ui, preview)
+            self.run_on_ui(self.update_preview_ui, preview, dpi)
 
     def preview_failed(self, message):
         self.btn_preview.configure(state="normal")
         if self.preview_window and self.preview_window.winfo_exists():
             self.preview_img_label.configure(text=f"Could not build preview:\n{message}", image=None)
 
-    def update_preview_ui(self, pil_img):
+    def update_preview_ui(self, pil_img, dpi):
         self.btn_preview.configure(state="normal")
         if not self.preview_window or not self.preview_window.winfo_exists():
             return
 
         w, h = pil_img.size
+        if hasattr(self, "lbl_preview_info") and self.lbl_preview_info.winfo_exists():
+            self.lbl_preview_info.configure(
+                text=f"Previewing First Page • {w}×{h} px ({dpi} DPI)"
+            )
+            self.preview_window.title(f"Preview - {w}×{h} px @ {dpi} DPI")
+
         aspect = h / w
         display_w, display_h = 500, int(500 * aspect)
-        if display_h > 600:
-            display_h, display_w = 600, int(600 / aspect)
+        if display_h > 580:
+            display_h, display_w = 580, int(580 / aspect)
 
         # Held on the instance so the image is not garbage collected while shown.
         self.current_preview_image = ctk.CTkImage(
@@ -486,7 +578,7 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             return
 
         self.set_busy(True)
-        args = (list(self.input_files), int(self.slider_dpi.get()), save_path)
+        args = (list(self.input_files), int(round(self.slider_dpi.get())), save_path)
         threading.Thread(target=self.run_pipeline, args=args, daemon=True).start()
 
     def run_pipeline(self, paths, dpi, output_path):
@@ -495,15 +587,20 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
             for index, total, image in iter_source_images(paths, dpi):
                 self.run_on_ui(self.set_status, f"Scanning page {index + 1} of {total}...", "orange")
-                enhanced = process_single_page(image)
                 # Saved as 1-bit: the data is already black/white, and Pillow can
                 # then use CCITT G4 compression instead of storing 8-bit pixels.
-                processed_pages.append(Image.fromarray(enhanced).convert("1"))
+                processed_pages.append(process_single_page(image, dpi=dpi))
 
             if not processed_pages:
                 raise ValueError("No pages/images to process.")
 
-            processed_pages[0].save(output_path, save_all=True, append_images=processed_pages[1:])
+            processed_pages[0].save(
+                output_path,
+                "PDF",
+                resolution=float(dpi),
+                save_all=True,
+                append_images=processed_pages[1:]
+            )
         except Exception as e:
             self.run_on_ui(self.conversion_failed, str(e))
         else:
