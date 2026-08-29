@@ -26,24 +26,44 @@ The tool runs **100% locally** on your machine—ensuring complete privacy for y
 
 ---
 
-## 🚀 Quick Start (Recommended)
+## 🚀 Quick Start
 
-Don't want to deal with Python scripts? You can run the application immediately:
-
+### 🪟 Windows
 1. Go to the **[Releases](https://github.com/ItsSp00ky/pdf_enhancer/releases)** page.
-2. Download the latest `PDFEnhancer.exe`.
-3. Double-click to run! 
+2. Download the latest `PDF_Enhancer_v1.1.exe` (or `PDF_Enhancer_Windows.exe`).
+3. Double-click to run!
+
+### 🐧 Linux (Fedora, Ubuntu, Arch, etc.)
+#### Option A: Standalone Binary (No Python setup needed)
+1. Go to the **[Releases](https://github.com/ItsSp00ky/pdf_enhancer/releases)** page.
+2. Download `PDF_Enhancer_Linux_x86_64` (or `PDF_Enhancer_Linux_x86_64.tar.gz`).
+3. Make it executable and run:
+   ```bash
+   chmod +x PDF_Enhancer_Linux_x86_64
+   ./PDF_Enhancer_Linux_x86_64
+   ```
+
+#### Option B: Automated Linux / Fedora Installer
+Clone and run the automated installer (sets up dependencies, app menu shortcut, and icon):
+```bash
+git clone https://github.com/ItsSp00ky/pdf_enhancer.git
+cd pdf_enhancer/python_version
+./install_linux.sh
+```
+*Note for Fedora users:* If installing manually without the script, install Tkinter via `sudo dnf install python3-tkinter`.
 
 ---
 
 ## ✨ Key Features
 
-* **🎨 Professional Enhancement:** Automatically converts shadowed or gray backgrounds into pure white while maintaining crisp, black text.
-* **📐 Smart Geometry Correction:** Detects document borders, crops excess background, and straightens tilted (skewed) pages.
-* **👁️ Real-time Preview:** Integrated preview window allows you to see the results of the first page before processing.
-* **⚡ Multi-threaded Engine:** Conversion runs on a background thread to keep the interface responsive.
-* **📦 Resolution Control:** Adjustable DPI settings (100–400) to balance quality and file size.
-* **🚀 Modern Desktop UI:** Built with `customtkinter` for a sleek, user-friendly dark-mode experience.
+* **🎨 Professional Enhancement:** Automatically converts shadowed or gray backgrounds into pure white while maintaining crisp, black text using adaptive Gaussian thresholding.
+* **📐 Smart Geometry Correction:** Automatically detects document borders, crops excess background, and straightens tilted (skewed) pages via 4-point perspective transform.
+* **📁 Drag & Drop + Multi-File Support:** Drag and drop files directly into the window. Seamlessly combine multiple PDFs and images (PNG, JPG, TIFF, BMP) into a single unified output PDF.
+* **🗜️ Ultra-Compact Output:** Saves output using 1-bit CCITT Group 4 fax compression for crisp text with file sizes up to ~20x smaller than standard scans.
+* **👁️ Real-time Preview:** Dedicated preview window lets you inspect the enhanced result of the first page before processing the full document.
+* **⚡ Multi-threaded Engine:** Background worker threads keep the UI fluid and responsive with real-time page-by-page progress status.
+* **📦 Resolution Control:** Adjustable DPI settings (100–400) to balance scan crispness and processing speed.
+* **🔒 100% Local & Private:** Processes all files entirely offline on your computer.
 
 ---
 
@@ -56,35 +76,64 @@ Don't want to deal with Python scripts? You can run the application immediately:
 
 ## ⚙️ Developer Installation
 
-If you prefer to run the source code or contribute to the project:
+If you prefer to run from source or build the executable yourself:
 
-### Prerequisites
-* Python 3.8 or higher
-* `pip` (Python Package Manager)
+### Option 1: Using `uv` (Recommended)
 
-### Steps
+[`uv`](https://github.com/astral-sh/uv) is an extremely fast Python package and project manager.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/ItsSp00ky/pdf_enhancer.git
-   cd pdf_enhancer
+```bash
+# 1. Clone the repository
+git clone https://github.com/ItsSp00ky/pdf_enhancer.git
+cd pdf_enhancer/python_version
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
+# 2. Sync dependencies into virtual environment
+uv sync
 
-3. **Run the application:**
-   ```bash
-   python main.py
+# 3. Run the application
+uv run python main.py
+
+# (Optional) Build standalone executable
+uv sync --all-groups
+uv run pyinstaller main.spec
+```
+
+### Option 2: Using `conda`
+
+```bash
+# 1. Create and activate environment from environment.yml
+conda env create -f environment.yml
+conda activate pdf-enhancer
+
+# 2. Run the application
+python main.py
+```
+
+### Option 3: Using standard `pip` / `venv`
+
+```bash
+# 1. Create and activate a virtual environment
+python -m venv .venv
+# On Windows:
+.venv\Scripts\activate
+# On Linux/macOS:
+source .venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Run the application
+python main.py
+```
 
 ---
 
 ## 🚀 Usage
 
-1. **Browse:** Select your input PDF file.
-2. **Adjust:** Set your desired Scan Quality (DPI) using the slider.
-3. **Preview:** Use the "Preview First Page" button to check the result.
-4. **Save:** Click "Convert & Save" to choose your output location. The final document will open automatically upon completion.
+1. **Select Files:** Browse or drag & drop one or more PDF/image files.
+2. **Adjust Quality:** Set your desired Scan Quality (DPI) with the slider (200 DPI recommended).
+3. **Preview:** Click "👁 Preview First" to inspect the enhanced output before full export.
+4. **Convert & Save:** Click "💾 Convert & Save" to choose your output PDF filename. The enhanced document will open automatically upon completion.
 
 ---
 
@@ -96,7 +145,3 @@ See the [LICENSE](LICENSE) file for more details.
 <div align="center">
   Developed by <a href="https://github.com/ItsSp00ky">Ahmed Gali</a>
 </div>
-
-
-
-

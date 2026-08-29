@@ -1,0 +1,14 @@
+name: pdf-enhancer
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10,<3.14
+  - pymupdf>=1.24
+  - opencv>=4.8
+  - numpy>=1.26
+  - pillow>=9.2
+  - pip
+  - pip:
+    - customtkinter>=5.2
+    - tkinterdnd2>=0.4

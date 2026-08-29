@@ -1,0 +1,24 @@
+[project]
+name = "pdf-enhancer"
+version = "1.1.0"
+description = "Turn photographed or scanned PDFs and images into clean, deskewed, high-contrast PDFs."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Ahmed Gali" }]
+requires-python = ">=3.9"
+
+dependencies = [
+    "pymupdf>=1.24",        # fitz.Document context manager + page_count
+    "opencv-python>=4.8",
+    "numpy>=1.26",
+    "pillow>=9.2",          # ImageOps.exif_transpose, 1-bit (CCITT G4) PDF save
+    "customtkinter>=5.2",
+    "tkinterdnd2>=0.4",
+]
+
+[dependency-groups]
+dev = ["pyinstaller>=6.0"]
+
+[tool.uv]
+# This is an application, not an importable package: nothing to build or install.
+package = false

@@ -1,7 +1,8 @@
 venv/
+.venv/
 build/
 dist/
 __pycache__/
-*.spec
 *.pdf
 .vscode/
+!main.spec

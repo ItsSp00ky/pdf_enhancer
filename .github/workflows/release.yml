@@ -1,0 +1,125 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.1.0)'
+        required: false
+        default: 'v1.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Build Executable
+        run: uv run pyinstaller main.spec
+
+      - name: Rename & Prepare Artifact
+        shell: pwsh
+        run: |
+          mkdir release-assets
+          Copy-Item dist\PDF_Enhancer_v1.1.exe release-assets\PDF_Enhancer_Windows.exe
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: release-assets\PDF_Enhancer_Windows.exe
+
+  build-linux:
+    name: Build Linux Executable (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies (Tkinter & X11)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libtk8.6 libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Build Standalone Linux Executable
+        run: uv run pyinstaller main.spec
+
+      - name: Package Linux Release Tarball
+        run: |
+          mkdir -p release-assets/pdf-enhancer-linux
+          cp dist/PDF_Enhancer_v1.1 release-assets/pdf-enhancer-linux/pdf-enhancer
+          cp scanner.png release-assets/pdf-enhancer-linux/
+          cp pdf-enhancer.desktop release-assets/pdf-enhancer-linux/
+          cp install_linux.sh release-assets/pdf-enhancer-linux/
+          cp README.md LICENSE release-assets/pdf-enhancer-linux/
+          chmod +x release-assets/pdf-enhancer-linux/pdf-enhancer
+          
+          cd release-assets
+          tar -czf PDF_Enhancer_Linux_x86_64.tar.gz pdf-enhancer-linux/
+          cp pdf-enhancer-linux/pdf-enhancer PDF_Enhancer_Linux_x86_64
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: |
+            release-assets/PDF_Enhancer_Linux_x86_64.tar.gz
+            release-assets/PDF_Enhancer_Linux_x86_64
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release-files
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: release-files
+
+      - name: Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-files/PDF_Enhancer_Windows.exe
+            release-files/PDF_Enhancer_Linux_x86_64.tar.gz
+            release-files/PDF_Enhancer_Linux_x86_64
+          generate_release_notes: true
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}

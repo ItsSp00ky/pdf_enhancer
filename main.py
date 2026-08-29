@@ -5,33 +5,47 @@
 import fitz  # PyMuPDF
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 import os
 import sys
 import threading
 import webbrowser
 import subprocess
+from urllib.parse import unquote, urlparse
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, TclError
 
-# --- NEW IMPORT FOR DRAG AND DROP ---
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
 # --- CONFIGURATION ---
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif")
+SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS + (".pdf",)
+
+IMAGE_FILETYPES = [("Image Files", " ".join(f"*{ext}" for ext in IMAGE_EXTENSIONS))]
+PDF_FILETYPES = [("PDF Files", "*.pdf")]
+# "Supported" first so the browse dialog accepts either kind without switching filter.
+BROWSE_FILETYPES = [
+    ("Supported Files", " ".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)),
+] + PDF_FILETYPES + IMAGE_FILETYPES
+
+DETECT_HEIGHT = 800        # page detection runs on a downscaled copy of this height
+MIN_PAGE_AREA_RATIO = 0.15  # a candidate quad must cover this much of the frame
+DROP_PROMPT = "Drag & drop files here or browse"
+
+
 # --- RESOURCE HELPER FOR EXE ---
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
+
 
 # --- Geometry & Cropping Helpers ---
 def order_points(pts):
+    """Order 4 points as top-left, top-right, bottom-right, bottom-left."""
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
     rect[0] = pts[np.argmin(s)]
@@ -41,15 +55,12 @@ def order_points(pts):
     rect[3] = pts[np.argmax(diff)]
     return rect
 
+
 def four_point_transform(image, pts):
     rect = order_points(pts)
     (tl, tr, br, bl) = rect
-    widthA = np.linalg.norm(br - bl)
-    widthB = np.linalg.norm(tr - tl)
-    maxWidth = int(max(widthA, widthB))
-    heightA = np.linalg.norm(tr - br)
-    heightB = np.linalg.norm(tl - bl)
-    maxHeight = int(max(heightA, heightB))
+    maxWidth = max(1, int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl))))
+    maxHeight = max(1, int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl))))
     dst = np.array([
         [0, 0],
         [maxWidth - 1, 0],
@@ -58,60 +69,136 @@ def four_point_transform(image, pts):
     M = cv2.getPerspectiveTransform(rect, dst)
     return cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 
-def process_single_page(image):
-    # image is BGR numpy array
-    orig_h, orig_w = image.shape[:2]
-    ratio = 800.0 / orig_h
-    small_img = cv2.resize(image, (int(orig_w * ratio), 800))
 
-    # Edge Detection
-    hsv = cv2.cvtColor(small_img, cv2.COLOR_BGR2HSV)
-    lower_white = np.array([0, 0, 100])
-    upper_white = np.array([180, 60, 255])
-    mask = cv2.inRange(hsv, lower_white, upper_white)
-    kernel = np.ones((5,5), np.uint8)
+def find_page_quad(image):
+    """Locate the document corners in full-resolution coordinates, or None."""
+    height = image.shape[0]
+    scale = min(1.0, DETECT_HEIGHT / height)
+    small = cv2.resize(image, None, fx=scale, fy=scale) if scale < 1.0 else image
+
+    # Isolate the (bright, desaturated) sheet of paper from the background.
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, np.array([0, 0, 100]), np.array([180, 60, 255]))
+    kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    # Contours
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
-    screenCnt = None
+    if not contours:
+        return None
 
-    if contours:
-        c = contours[0]
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        if len(approx) == 4 and cv2.contourArea(approx) > (0.15 * (800 * int(orig_w * ratio))):
-            screenCnt = approx
+    largest = max(contours, key=cv2.contourArea)
+    approx = cv2.approxPolyDP(largest, 0.02 * cv2.arcLength(largest, True), True)
+    if len(approx) != 4:
+        return None
 
-    # Transform
-    if screenCnt is not None:
-        screenCnt = screenCnt.reshape(4, 2) * (1.0 / ratio)
-        warped = four_point_transform(image, screenCnt)
-    else:
-        warped = image
+    small_h, small_w = small.shape[:2]
+    if cv2.contourArea(approx) < MIN_PAGE_AREA_RATIO * small_w * small_h:
+        return None
 
-    # Thresholding
+    return approx.reshape(4, 2).astype("float32") / scale
+
+
+def process_single_page(image):
+    """Deskew/crop a BGR page image and return it as a binarised grayscale array."""
+    quad = find_page_quad(image)
+    warped = four_point_transform(image, quad) if quad is not None else image
+
     gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10)
-    denoised = cv2.medianBlur(binary, 3)
-    return denoised
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10)
+    return cv2.medianBlur(binary, 3)
+
+
+# --- Input Loading ---
+def pixmap_to_bgr(pix):
+    """Convert a PyMuPDF pixmap to a BGR numpy array (stride-safe)."""
+    rows = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)
+    img = rows[:, :pix.width * pix.n].reshape(pix.height, pix.width, pix.n)
+    if pix.n == 1:
+        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    if pix.n == 4:
+        # MuPDF stores premultiplied alpha; flatten onto white so a transparent
+        # page background does not become black and invert after thresholding.
+        alpha = img[:, :, 3:4].astype(np.uint16)
+        img = np.clip(img[:, :, :3].astype(np.uint16) + (255 - alpha), 0, 255).astype(np.uint8)
+    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
 
 def load_image_to_bgr(path):
     """Load an image file and convert to BGR format (OpenCV compatible)."""
-    pil_img = Image.open(path)
-    if pil_img.mode == 'RGBA':
-        # Convert to RGB first (discard alpha)
-        rgb_img = Image.new('RGB', pil_img.size, (255, 255, 255))
-        rgb_img.paste(pil_img, mask=pil_img.split()[3])  # Paste using alpha as mask
-        bgr_img = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
-    elif pil_img.mode != 'RGB':
-        pil_img = pil_img.convert('RGB')
-        bgr_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    else:
-        bgr_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    return bgr_img
+    with Image.open(path) as opened:
+        img = ImageOps.exif_transpose(opened)
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            # Flatten transparency onto white so it does not threshold to black.
+            rgba = img.convert("RGBA")
+            flattened = Image.new("RGB", rgba.size, (255, 255, 255))
+            flattened.paste(rgba, mask=rgba)
+            img = flattened
+        else:
+            img = img.convert("RGB")
+        return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+
+
+def is_pdf(path):
+    """Input kind is decided per file by extension - there is no global mode."""
+    return path.lower().endswith(".pdf")
+
+
+def count_source_pages(paths):
+    """Total output pages: every PDF contributes its page count, every image one."""
+    total = 0
+    for path in paths:
+        if is_pdf(path):
+            with fitz.open(path) as doc:
+                total += doc.page_count
+        else:
+            total += 1
+    return total
+
+
+def describe_selection(paths):
+    """Human-readable summary of what was detected, e.g. '1 PDF + 2 images'."""
+    pdfs = sum(1 for path in paths if is_pdf(path))
+    images = len(paths) - pdfs
+    parts = []
+    if pdfs:
+        parts.append(f"{pdfs} PDF{'s' if pdfs > 1 else ''}")
+    if images:
+        parts.append(f"{images} image{'s' if images > 1 else ''}")
+    return " + ".join(parts)
+
+
+def iter_source_images(paths, dpi):
+    """Yield (index, total, bgr_image) for every page of the whole selection.
+
+    PDFs are rasterised page by page and images are loaded whole; both are
+    flattened into one continuous page stream in the order they were selected.
+    """
+    total = count_source_pages(paths)
+    index = 0
+    for path in paths:
+        if is_pdf(path):
+            with fitz.open(path) as doc:
+                for page_number in range(doc.page_count):
+                    yield index, total, pixmap_to_bgr(doc[page_number].get_pixmap(dpi=dpi))
+                    index += 1
+        else:
+            yield index, total, load_image_to_bgr(path)
+            index += 1
+
+
+def open_with_default_app(path):
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        print(f"Error opening file: {e}")
+
 
 # --- GUI Logic ---
 # Inherit from TkinterDnD.DnDWrapper to enable drag and drop in CTk
@@ -128,24 +215,22 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             print(f"Warning: Drag and Drop functionality could not be loaded: {e}")
 
         self.title("PDF Enhancer")
-        self.geometry("600x500")  # Increased height for mode selector
+        self.geometry("600x500")
         self.resizable(False, False)
+        self.set_icon(self)
 
-        # SET ICON
-        try:
-            icon_path = resource_path("scanner.ico")
-            self.iconbitmap(icon_path)
-        except Exception:
-            pass
+        # Application State
+        self.input_files = []       # any mix of PDFs and images, in selection order
+        self.preview_window = None
+        self.preview_img_label = None
+        self.current_preview_image = None
+        self.is_closing = False
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         # Layout Grid
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)  # Title
-        self.grid_rowconfigure(1, weight=0)  # Input
-        self.grid_rowconfigure(2, weight=0)  # Settings + Mode
-        self.grid_rowconfigure(3, weight=0)  # Buttons
-        self.grid_rowconfigure(4, weight=1)  # Status
-        self.grid_rowconfigure(5, weight=0)  # GitHub Footer
+        self.grid_rowconfigure(4, weight=1)  # status row absorbs the slack
 
         # 1. Header
         self.lbl_title = ctk.CTkLabel(self, text="📄 PDF Clean Scanner", font=ctk.CTkFont(size=24, weight="bold"))
@@ -155,29 +240,18 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.frame_file = ctk.CTkFrame(self)
         self.frame_file.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-        # Updated default text to indicate DnD is available
-        self.lbl_file_path = ctk.CTkLabel(self.frame_file, text="Drag & drop files here or browse", text_color="gray")
+        self.lbl_file_path = ctk.CTkLabel(self.frame_file, text=DROP_PROMPT, text_color="gray")
         self.lbl_file_path.pack(side="left", padx=15, pady=15)
 
         self.btn_browse = ctk.CTkButton(self.frame_file, text="Browse", command=self.browse_file)
         self.btn_browse.pack(side="right", padx=15, pady=15)
 
-        # 3. Settings Frame (includes DPI and Mode)
+        # 3. Settings Frame (DPI)
         self.frame_settings = ctk.CTkFrame(self)
         self.frame_settings.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
 
-        # Mode selector
-        self.mode_var = ctk.StringVar(value="pdf")
-        self.mode_selector = ctk.CTkSegmentedButton(
-            self.frame_settings,
-            values=["PDF", "Images"],
-            variable=self.mode_var,
-            command=self.mode_changed
-        )
-        self.mode_selector.pack(side="top", pady=(10, 5))
-
         self.lbl_dpi = ctk.CTkLabel(self.frame_settings, text="Scan Quality (DPI): 200")
-        self.lbl_dpi.pack(side="top", pady=(5, 0))
+        self.lbl_dpi.pack(side="top", pady=(15, 0))
 
         self.slider_dpi = ctk.CTkSlider(self.frame_settings, from_=100, to=400, number_of_steps=6, command=self.update_dpi_label)
         self.slider_dpi.set(200)
@@ -217,12 +291,60 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         )
         self.btn_github.grid(row=5, column=0, pady=(0, 10))
 
-        # Application State
-        self.input_files = []          # list of file paths (one for PDF, multiple for images)
-        self.preview_window = None
-        self.preview_doc = None        # only used for PDF preview
-        self.preview_img_label = None
-        self.current_preview_image = None
+    # --- Small UI helpers ---
+    def on_close(self):
+        self.is_closing = True
+        self.destroy()
+
+    def run_on_ui(self, func, *args):
+        """Schedule a callback on the Tk thread; a no-op once the app is closing.
+
+        Worker threads must never touch widgets directly. Scheduling can still
+        lose a race with teardown, which surfaces as TclError (widget already
+        destroyed) or RuntimeError (main loop no longer running) - both mean the
+        UI is gone and the update is simply dropped.
+        """
+        if self.is_closing:
+            return
+        try:
+            self.after(0, lambda: func(*args))
+        except (TclError, RuntimeError):
+            pass
+
+    def set_icon(self, window):
+        """Apply the app icon across Windows, Linux, and macOS. CTk re-applies
+        its own icon shortly after a window is created, so ours has to be
+        re-asserted once that has happened."""
+        icon_path_ico = resource_path("scanner.ico")
+        icon_path_png = resource_path("scanner.png")
+
+        def apply():
+            try:
+                if not window.winfo_exists():
+                    return
+                if sys.platform == "win32" and os.path.exists(icon_path_ico):
+                    window.iconbitmap(icon_path_ico)
+                else:
+                    from PIL import ImageTk
+                    png_path = icon_path_png if os.path.exists(icon_path_png) else icon_path_ico
+                    if os.path.exists(png_path):
+                        img = Image.open(png_path)
+                        photo = ImageTk.PhotoImage(img)
+                        window.iconphoto(False, photo)
+                        window._icon_photo_ref = photo
+            except Exception:
+                pass
+
+        window.after(200, apply)
+
+    def set_status(self, text, color="gray"):
+        self.lbl_status.configure(text=text, text_color=color)
+
+    def set_busy(self, busy):
+        state = "disabled" if busy else "normal"
+        self.btn_convert.configure(state=state, text="Processing..." if busy else "💾 Convert & Save")
+        self.btn_preview.configure(state=state)
+        self.btn_browse.configure(state=state)
 
     def open_github(self):
         webbrowser.open("https://github.com/ItsSp00ky/pdf_enhancer")
@@ -230,77 +352,45 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def update_dpi_label(self, value):
         self.lbl_dpi.configure(text=f"Scan Quality (DPI): {int(value)}")
 
-    def mode_changed(self, value):
-        """Called when the mode selector changes."""
-        self.input_files = []
-        self.lbl_file_path.configure(text="Drag & drop files here or browse", text_color="gray")
-        # Update browse button text based on mode
-        if value == "PDF":
-            self.btn_browse.configure(text="Browse PDF")
-        else:
-            self.btn_browse.configure(text="Browse Images")
+    def set_input_files(self, paths, source):
+        self.input_files = list(paths)
+        label = (os.path.basename(self.input_files[0]) if len(self.input_files) == 1
+                 else f"{len(self.input_files)} files selected")
+        self.lbl_file_path.configure(text=label, text_color=("black", "white"))
+        # Naming what was detected is what tells the user the guess was right,
+        # now that no mode selector shows it.
+        self.set_status(f"Detected {describe_selection(self.input_files)}{source}. Ready.", "green")
 
-    # --- DRAG AND DROP HANDLER ---
+    # --- File Selection ---
     def handle_drop(self, event):
         """Handles files dropped into the application window."""
-        # Safely split paths (handles spaces and curly braces natively via Tkinter)
-        dropped_files = self.tk.splitlist(event.data)
-        mode = self.mode_var.get()
-        valid_files = []
+        # splitlist handles Tcl's brace-quoting of paths containing spaces
+        raw_files = self.tk.splitlist(event.data)
+        dropped_files = []
+        for item in raw_files:
+            item = item.strip().strip("'").strip('"')
+            if item.startswith("file://"):
+                parsed = urlparse(item)
+                item = unquote(parsed.path)
+                if sys.platform == "win32" and item.startswith("/") and len(item) > 2 and item[2] == ":":
+                    item = item.lstrip("/")
+            if item:
+                dropped_files.append(item)
 
-        if mode == "PDF":
-            # Find the first PDF in the dropped items
-            for f in dropped_files:
-                if f.lower().endswith(".pdf"):
-                    valid_files.append(f)
-                    break
-                    
-            if valid_files:
-                self.input_files = valid_files
-                self.lbl_file_path.configure(text=os.path.basename(valid_files[0]), text_color=("black", "white"))
-                self.lbl_status.configure(text="PDF loaded via Drag & Drop. Ready.", text_color="green")
-            else:
-                messagebox.showwarning("Invalid File", "Please drop a valid PDF file.")
+        matches = [f for f in dropped_files if f.lower().endswith(SUPPORTED_EXTENSIONS)]
+        if not matches:
+            messagebox.showwarning(
+                "Invalid File",
+                "Please drop a PDF or image files (JPG, PNG, BMP, TIFF)."
+            )
+            return
 
-        else:  # Images Mode
-            valid_exts = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
-            for f in dropped_files:
-                if f.lower().endswith(valid_exts):
-                    valid_files.append(f)
-            
-            if valid_files:
-                self.input_files = valid_files
-                if len(valid_files) == 1:
-                    display_text = os.path.basename(valid_files[0])
-                else:
-                    display_text = f"{len(valid_files)} images loaded"
-                
-                self.lbl_file_path.configure(text=display_text, text_color=("black", "white"))
-                self.lbl_status.configure(text="Images loaded via Drag & Drop. Ready.", text_color="green")
-            else:
-                messagebox.showwarning("Invalid File", "Please drop valid image files (JPG, PNG, BMP, TIFF).")
-
+        self.set_input_files(matches, " via drag & drop")
 
     def browse_file(self):
-        mode = self.mode_var.get()
-        if mode == "PDF":
-            filename = filedialog.askopenfilename(filetypes=[("PDF Files", "*.pdf")])
-            if filename:
-                self.input_files = [filename]
-                self.lbl_file_path.configure(text=os.path.basename(filename), text_color=("black", "white"))
-                self.lbl_status.configure(text="File loaded. Ready.", text_color="green")
-        else:  # Images mode
-            filenames = filedialog.askopenfilenames(
-                filetypes=[("Image Files", "*.jpg *.jpeg *.png *.bmp *.tiff")]
-            )
-            if filenames:
-                self.input_files = list(filenames)
-                if len(filenames) == 1:
-                    display_text = os.path.basename(filenames[0])
-                else:
-                    display_text = f"{len(filenames)} images selected"
-                self.lbl_file_path.configure(text=display_text, text_color=("black", "white"))
-                self.lbl_status.configure(text="Images loaded. Ready.", text_color="green")
+        selection = list(filedialog.askopenfilenames(filetypes=BROWSE_FILETYPES))
+        if selection:
+            self.set_input_files(selection, "")
 
     # --- PREVIEW LOGIC (First file only) ---
     def open_preview_window(self):
@@ -308,31 +398,12 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             messagebox.showwarning("Warning", "Please select or drop a file first!")
             return
 
-        mode = self.mode_var.get()
-        try:
-            if mode == "PDF":
-                self.preview_doc = fitz.open(self.input_files[0])
-                if len(self.preview_doc) < 1:
-                    messagebox.showerror("Error", "PDF is empty.")
-                    return
-            # For images, no document to keep open; we'll load on the fly
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not open file: {e}")
-            return
-
         if self.preview_window is None or not self.preview_window.winfo_exists():
             self.preview_window = ctk.CTkToplevel(self)
             self.preview_window.title("First Item Preview")
             self.preview_window.geometry("600x700")
             self.preview_window.attributes("-topmost", True)
-
-            try:
-                icon_path = resource_path("scanner.ico")
-                self.preview_window.iconbitmap(icon_path)
-            except:
-                pass
-
-            self.preview_window.protocol("WM_DELETE_WINDOW", self.close_preview_window)
+            self.set_icon(self.preview_window)
 
             lbl_info = ctk.CTkLabel(self.preview_window, text="Previewing First Item Only", font=("Arial", 14, "bold"))
             lbl_info.pack(pady=10)
@@ -342,54 +413,49 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 corner_radius=10, fg_color="#2B2B2B"
             )
             self.preview_img_label.pack(padx=20, pady=(0, 20), expand=True, fill="both")
+        else:
+            self.preview_img_label.configure(text="Processing...", image=None)
 
         self.preview_window.focus()
-        threading.Thread(target=self.process_preview_thread, daemon=True).start()
+        self.btn_preview.configure(state="disabled")
 
-    def close_preview_window(self):
-        if self.preview_doc:
-            self.preview_doc.close()
-            self.preview_doc = None
-        if self.preview_window:
-            self.preview_window.destroy()
+        # Snapshot the widget values here: they must not be read off the worker thread.
+        args = (self.input_files[0], int(self.slider_dpi.get()))
+        threading.Thread(target=self.run_preview, args=args, daemon=True).start()
 
-    def process_preview_thread(self):
+    def run_preview(self, path, dpi):
         try:
-            mode = self.mode_var.get()
-            dpi_val = int(self.slider_dpi.get())
-
-            if mode == "PDF":
-                page = self.preview_doc[0]
-                pix = page.get_pixmap(dpi=dpi_val)
-                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-                if pix.n == 4:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                elif pix.n == 3:
-                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            else:  # Images
-                # Load first image
-                img = load_image_to_bgr(self.input_files[0])
-
-            enhanced = process_single_page(img)
-            pil_img = Image.fromarray(enhanced)
-            self.after(0, lambda: self.update_preview_ui(pil_img))
-
+            if is_pdf(path):
+                with fitz.open(path) as doc:
+                    if doc.page_count == 0:
+                        raise ValueError("PDF is empty.")
+                    image = pixmap_to_bgr(doc[0].get_pixmap(dpi=dpi))
+            else:
+                image = load_image_to_bgr(path)
+            preview = Image.fromarray(process_single_page(image))
         except Exception as e:
             print(f"Preview Error: {e}")
-            self.after(0, lambda: self.preview_img_label.configure(text="Error loading preview.", image=None))
+            self.run_on_ui(self.preview_failed, str(e))
+        else:
+            self.run_on_ui(self.update_preview_ui, preview)
+
+    def preview_failed(self, message):
+        self.btn_preview.configure(state="normal")
+        if self.preview_window and self.preview_window.winfo_exists():
+            self.preview_img_label.configure(text=f"Could not build preview:\n{message}", image=None)
 
     def update_preview_ui(self, pil_img):
+        self.btn_preview.configure(state="normal")
         if not self.preview_window or not self.preview_window.winfo_exists():
             return
 
         w, h = pil_img.size
         aspect = h / w
-        display_w = 500
-        display_h = int(display_w * aspect)
+        display_w, display_h = 500, int(500 * aspect)
         if display_h > 600:
-            display_h = 600
-            display_w = int(display_h / aspect)
+            display_h, display_w = 600, int(600 / aspect)
 
+        # Held on the instance so the image is not garbage collected while shown.
         self.current_preview_image = ctk.CTkImage(
             light_image=pil_img,
             dark_image=pil_img,
@@ -403,90 +469,66 @@ class ScannerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             messagebox.showwarning("Warning", "Please select or drop a file first!")
             return
 
-        # Suggest output filename based on first input file
         base = os.path.splitext(os.path.basename(self.input_files[0]))[0]
-        suggested = f"{base}_scanned.pdf"
 
         save_path = filedialog.asksaveasfilename(
             defaultextension=".pdf",
-            filetypes=[("PDF Files", "*.pdf")],
-            initialfile=suggested,
+            filetypes=PDF_FILETYPES,
+            initialfile=f"{base}_scanned.pdf",
             title="Save Scanned PDF As"
         )
-
         if not save_path:
             return
 
-        self.btn_convert.configure(state="disabled", text="Processing...")
-        self.btn_preview.configure(state="disabled")
-        self.btn_browse.configure(state="disabled")
+        sources = {os.path.normcase(os.path.abspath(p)) for p in self.input_files}
+        if os.path.normcase(os.path.abspath(save_path)) in sources:
+            messagebox.showerror("Invalid Destination", "Please choose a different name so the source file is not overwritten.")
+            return
 
-        threading.Thread(target=self.run_pipeline, args=(save_path,), daemon=True).start()
+        self.set_busy(True)
+        args = (list(self.input_files), int(self.slider_dpi.get()), save_path)
+        threading.Thread(target=self.run_pipeline, args=args, daemon=True).start()
 
-    def run_pipeline(self, output_path):
+    def run_pipeline(self, paths, dpi, output_path):
         try:
             processed_pages = []
-            dpi_val = int(self.slider_dpi.get())
-            mode = self.mode_var.get()
 
-            if mode == "PDF":
-                doc = fitz.open(self.input_files[0])
-                total_pages = len(doc)
-                for i, page in enumerate(doc):
-                    self.after(0, lambda p=i+1, t=total_pages: self.lbl_status.configure(
-                        text=f"Scanning Page {p} of {t}...", text_color="orange"))
-                    pix = page.get_pixmap(dpi=dpi_val)
-                    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-                    if pix.n == 4:
-                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                    elif pix.n == 3:
-                        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                    enhanced = process_single_page(img)
-                    pil_img = Image.fromarray(enhanced)
-                    processed_pages.append(pil_img)
-                doc.close()
-            else:  # Images
-                total = len(self.input_files)
-                for idx, img_path in enumerate(self.input_files):
-                    self.after(0, lambda p=idx+1, t=total: self.lbl_status.configure(
-                        text=f"Processing Image {p} of {t}...", text_color="orange"))
-                    img = load_image_to_bgr(img_path)
-                    enhanced = process_single_page(img)
-                    pil_img = Image.fromarray(enhanced)
-                    processed_pages.append(pil_img)
+            for index, total, image in iter_source_images(paths, dpi):
+                self.run_on_ui(self.set_status, f"Scanning page {index + 1} of {total}...", "orange")
+                enhanced = process_single_page(image)
+                # Saved as 1-bit: the data is already black/white, and Pillow can
+                # then use CCITT G4 compression instead of storing 8-bit pixels.
+                processed_pages.append(Image.fromarray(enhanced).convert("1"))
 
-            if processed_pages:
-                processed_pages[0].save(output_path, save_all=True, append_images=processed_pages[1:])
-                self.after(0, lambda: self.conversion_success(output_path))
-            else:
-                self.after(0, lambda: messagebox.showerror("Error", "No pages/images to process."))
+            if not processed_pages:
+                raise ValueError("No pages/images to process.")
 
+            processed_pages[0].save(output_path, save_all=True, append_images=processed_pages[1:])
         except Exception as e:
-            self.after(0, lambda err=str(e): messagebox.showerror("Error", f"An error occurred:\n{err}"))
-            self.after(0, self.reset_ui)
+            self.run_on_ui(self.conversion_failed, str(e))
+        else:
+            self.run_on_ui(self.conversion_success, output_path)
+
+    def conversion_failed(self, message):
+        self.set_busy(False)
+        self.set_status("Conversion failed.", "red")
+        messagebox.showerror("Error", f"An error occurred:\n{message}")
 
     def conversion_success(self, path):
+        self.set_busy(False)
+        self.set_status("Conversion Complete!", "green")
         messagebox.showinfo("Success", f"File saved successfully:\n{path}")
-        self.lbl_status.configure(text="Conversion Complete!", text_color="green")
 
-        # Open the generated PDF
         try:
-            if sys.platform == "win32":
-                os.startfile(path)
-            elif sys.platform == "darwin":  # macOS
-                subprocess.call(["open", path])
-            else:  # Linux
-                subprocess.call(["xdg-open", path])
+            open_with_default_app(path)
         except Exception as e:
             print(f"Error opening file: {e}")
 
-        self.reset_ui()
 
-    def reset_ui(self):
-        self.btn_convert.configure(state="normal", text="Convert & Save As...")
-        self.btn_preview.configure(state="normal")
-        self.btn_browse.configure(state="normal")
-
-if __name__ == "__main__":
+def main():
     app = ScannerApp()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
