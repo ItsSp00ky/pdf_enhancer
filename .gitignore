@@ -51,3 +51,15 @@ generic/
 Thumbs.db
 .idea/
 .vscode/
+*.user
+*.user.*
+*.suo
+CMakeUserPresets.json
+
+# Python / legacy local files
+.venv/
+__pycache__/
+
+# Archive packages
+*.zip
+*.tar.gz
