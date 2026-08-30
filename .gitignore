@@ -1,8 +1,65 @@
-venv/
-.venv/
-build/
-dist/
-__pycache__/
-*.pdf
+# Build artifacts
+/build/
+/out/
+/cmake-build-*/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+
+# Visual Studio / MSBuild
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.vc.db
+*.VC.opendb
+*.ipch
+*.ilk
+*.pdb
+*.obj
+*.idb
+*.tlog
+*.log
+*.tmp
+*.lastbuildstate
+
+# Runtime deployment artifacts (generated)
+*.dll
+*.exe
+*.exp
+*.lib
+*.manifest
+*.qm
+*.rcc
+
+# Qt deployment folders
+platforms/
+styles/
+imageformats/
+iconengines/
+networkinformation/
+tls/
+generic/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
 .vscode/
-!main.spec
+*.user
+*.user.*
+*.suo
+CMakeUserPresets.json
+
+# Python / legacy local files
+.venv/
+__pycache__/
+
+# Archive packages
+*.zip
+*.tar.gz

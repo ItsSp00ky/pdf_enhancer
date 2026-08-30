@@ -7,94 +7,141 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v1.1.0)'
+        description: 'Release Tag (e.g. v2.0.0)'
         required: false
-        default: 'v1.1.0'
+        default: 'v2.0.0'
 
 permissions:
   contents: write
 
 jobs:
   build-windows:
-    name: Build Windows Executable
+    name: Build Windows Release
     runs-on: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup Qt 6
+        uses: jurplel/install-qt-action@v4
         with:
-          enable-cache: true
+          version: "6.8.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          modules: "qtpdf"
 
-      - name: Set up Python
-        run: uv python install 3.13
-
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Build Executable
-        run: uv run pyinstaller main.spec
-
-      - name: Rename & Prepare Artifact
-        shell: pwsh
+      - name: Ensure Qt6_DIR is set
+        shell: powershell
         run: |
-          mkdir release-assets
-          Copy-Item dist\PDF_Enhancer_v1.1.exe release-assets\PDF_Enhancer_Windows.exe
+          if (-not $env:Qt6_DIR) {
+            $qmake = Get-Command qmake.exe -ErrorAction SilentlyContinue
+            if (-not $qmake) {
+              $qmakeEntry = Get-ChildItem -Path 'C:\Qt' -Filter 'qmake.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($qmakeEntry) { $qmake = $qmakeEntry }
+            }
+            if (-not $qmake) {
+              Write-Host "Could not auto-detect qmake/Qt installation location. Listing C:\Qt for debugging:"
+              Get-ChildItem -Path C:\Qt -Force -ErrorAction SilentlyContinue | Select-Object -First 50
+              Write-Error "Qt install not found. Ensure the installer placed Qt under C:\Qt or set Qt6_DIR manually."
+              exit 1
+            }
+            $qtRoot = Split-Path $qmake.Path -Parent | Split-Path -Parent
+            Write-Host "Detected Qt6_DIR = $qtRoot"
+            echo "Qt6_DIR=$qtRoot" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "Qt6_DIR already set to $env:Qt6_DIR"
+          }
 
-      - name: Upload Windows Artifact
+      - name: Setup OpenCV
+        shell: powershell
+        run: |
+          choco install opencv --yes
+          echo "OpenCV_DIR=C:/tools/opencv/build" >> $env:GITHUB_ENV
+          echo "OPENCV_BIN=C:/tools/opencv/build/x64/vc16/bin" >> $env:GITHUB_ENV
+
+      - name: Configure CMake
+        shell: powershell
+        run: |
+          if (-not $env:Qt6_DIR) { Write-Host "Qt6_DIR not set yet (will try to auto-detect)"; }
+          cmake -S . -B build -DQt6_DIR="$env:Qt6_DIR" -DOpenCV_DIR="$env:OpenCV_DIR"
+
+      - name: Build C++ Release Binary
+        shell: powershell
+        run: |
+          cmake --build build --config Release
+
+      - name: Deploy Qt & OpenCV Runtime Files
+        shell: powershell
+        run: |
+          if (-not $env:Qt6_DIR) { Write-Error "Qt6_DIR is empty. Cannot run windeployqt."; exit 1 }
+          $windeployqt = Join-Path $env:Qt6_DIR "bin\windeployqt.exe"
+          if (-not (Test-Path $windeployqt)) { Write-Error "windeployqt not found at $windeployqt"; exit 1 }
+          & $windeployqt --release --no-translations .\build\Release\pdf_enhancer_cpp.exe
+
+          if (-not $env:OPENCV_BIN) { Write-Host "OPENCV_BIN is not set; attempting default path"; }
+          $opencvBin = $env:OPENCV_BIN
+          if (-not $opencvBin) { $opencvBin = "C:/tools/opencv/build/x64/vc16/bin" }
+          $opencvDll = Get-ChildItem -Path $opencvBin -Filter "opencv_world*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($opencvDll) {
+            Copy-Item $opencvDll.FullName .\build\Release\ -Force
+          } else {
+            Write-Host "opencv_world*.dll not found in $opencvBin; continuing without copying OpenCV DLL."
+          }
+          mkdir -Force release-assets
+          Copy-Item .\build\Release\pdf_enhancer_cpp.exe release-assets\PDF_Enhancer_v2.0_Windows.exe -Force
+          Compress-Archive -Path .\build\Release\* -DestinationPath release-assets\PDF_Enhancer_v2.0_Windows_x64.zip
+
+      - name: Upload Windows Release Asset
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: release-assets\PDF_Enhancer_Windows.exe
+          path: |
+            release-assets/PDF_Enhancer_v2.0_Windows_x64.zip
+            release-assets/PDF_Enhancer_v2.0_Windows.exe
 
   build-linux:
-    name: Build Linux Executable (x86_64)
+    name: Build Linux Release (x86_64)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (Tkinter & X11)
+      - name: Install system build dependencies (Qt6, OpenCV, CMake, GCC)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libtk8.6 libgl1 libglib2.0-0
+          sudo apt-get install -y cmake g++ qt6-base-dev qt6-pdf-dev libopencv-dev
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Set up Python
-        run: uv python install 3.13
+      - name: Build C++ Linux Binary
+        run: cmake --build build --config Release -j$(nproc)
 
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Build Standalone Linux Executable
-        run: uv run pyinstaller main.spec
-
-      - name: Package Linux Release Tarball
+      - name: Package Linux & Fedora Release Tarballs
         run: |
           mkdir -p release-assets/pdf-enhancer-linux
-          cp dist/PDF_Enhancer_v1.1 release-assets/pdf-enhancer-linux/pdf-enhancer
+          cp build/pdf_enhancer_cpp release-assets/pdf-enhancer-linux/pdf-enhancer
           cp scanner.png release-assets/pdf-enhancer-linux/
-          cp pdf-enhancer.desktop release-assets/pdf-enhancer-linux/
-          cp install_linux.sh release-assets/pdf-enhancer-linux/
           cp README.md LICENSE release-assets/pdf-enhancer-linux/
           chmod +x release-assets/pdf-enhancer-linux/pdf-enhancer
           
           cd release-assets
-          tar -czf PDF_Enhancer_Linux_x86_64.tar.gz pdf-enhancer-linux/
-          cp pdf-enhancer-linux/pdf-enhancer PDF_Enhancer_Linux_x86_64
+          tar -czf PDF_Enhancer_v2.0_Linux_x86_64.tar.gz pdf-enhancer-linux/
+          cp PDF_Enhancer_v2.0_Linux_x86_64.tar.gz PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
+          cp pdf-enhancer-linux/pdf-enhancer PDF_Enhancer_v2.0_Linux_x86_64
 
-      - name: Upload Linux Artifact
+      - name: Upload Linux Release Asset
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
           path: |
-            release-assets/PDF_Enhancer_Linux_x86_64.tar.gz
-            release-assets/PDF_Enhancer_Linux_x86_64
+            release-assets/PDF_Enhancer_v2.0_Linux_x86_64.tar.gz
+            release-assets/PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
+            release-assets/PDF_Enhancer_v2.0_Linux_x86_64
 
   publish-release:
     name: Publish GitHub Release
@@ -118,8 +165,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-files/PDF_Enhancer_Windows.exe
-            release-files/PDF_Enhancer_Linux_x86_64.tar.gz
-            release-files/PDF_Enhancer_Linux_x86_64
+            release-files/PDF_Enhancer_v2.0_Windows_x64.zip
+            release-files/PDF_Enhancer_v2.0_Linux_x86_64.tar.gz
+            release-files/PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
+            release-files/PDF_Enhancer_v2.0_Linux_x86_64
           generate_release_notes: true
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
