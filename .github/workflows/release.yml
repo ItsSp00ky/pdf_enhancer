@@ -166,7 +166,6 @@ jobs:
         with:
           files: |
             release-files/PDF_Enhancer_v2.0_Windows_x64.zip
-            release-files/PDF_Enhancer_v2.0_Windows.exe
             release-files/PDF_Enhancer_v2.0_Linux_x86_64.tar.gz
             release-files/PDF_Enhancer_v2.0_Linux_Fedora_x86_64.tar.gz
             release-files/PDF_Enhancer_v2.0_Linux_x86_64
